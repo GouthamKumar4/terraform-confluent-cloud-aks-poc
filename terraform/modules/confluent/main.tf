@@ -1,17 +1,12 @@
 ###############################################################################
 # Confluent Cloud Module
-# Creates: Environment, Network (PrivateLink), Dedicated Kafka Cluster,
-#          Topics, Service Account, API Key, ACLs, and Private Link Access
+# Creates: Network (PrivateLink), Dedicated Kafka Cluster, Topics,
+#          application Service Account, API Key, ACLs, and Private Link Access
 ###############################################################################
 
-# Environment
-resource "confluent_environment" "this" {
-  display_name = var.environment_name
-
-  stream_governance {
-    package = "ESSENTIALS"
-  }
-}
+# Existing Confluent Cloud environment
+# Create/login and environment setup are manual prerequisites. This module
+# references the environment ID passed by the root module.
 
 # Confluent-managed Network (THEIR side — you declare, they manage)
 # This is NOT your Azure VNet. This is Confluent's internal network
@@ -27,7 +22,7 @@ resource "confluent_network" "this" {
   }
 
   environment {
-    id = confluent_environment.this.id
+    id = var.environment_id
   }
 
   zones = var.confluent_availability_zones
@@ -42,7 +37,7 @@ resource "confluent_private_link_access" "this" {
   }
 
   environment {
-    id = confluent_environment.this.id
+    id = var.environment_id
   }
 
   network {
@@ -66,7 +61,7 @@ resource "confluent_kafka_cluster" "this" {
   }
 
   environment {
-    id = confluent_environment.this.id
+    id = var.environment_id
   }
 }
 
@@ -93,7 +88,7 @@ resource "confluent_api_key" "app" {
     kind        = confluent_kafka_cluster.this.kind
 
     environment {
-      id = confluent_environment.this.id
+      id = var.environment_id
     }
   }
 }

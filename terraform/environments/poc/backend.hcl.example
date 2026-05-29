@@ -1,0 +1,5 @@
+resource_group_name  = "rg-tfstate-poc-001"
+storage_account_name = "<manually-created-storage-account-name>"
+container_name       = "tfstate"
+key                  = "poc/confluent-kafka/poc.tfstate"
+use_azuread_auth     = true

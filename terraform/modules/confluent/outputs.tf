@@ -1,6 +1,6 @@
 output "environment_id" {
   description = "Confluent environment ID"
-  value       = confluent_environment.this.id
+  value       = var.environment_id
 }
 
 output "cluster_id" {
