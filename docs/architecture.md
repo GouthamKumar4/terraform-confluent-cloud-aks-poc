@@ -1,4 +1,5 @@
 # Architecture
+<img width="700" height="337" alt="image" src="https://github.com/user-attachments/assets/2a64e08f-a3bd-4eb6-b112-b57575a233bc" />
 
 ## Components
 
