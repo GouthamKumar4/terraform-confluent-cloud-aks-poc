@@ -1,6 +1,11 @@
-variable "environment_name" {
-  description = "Display name for the Confluent Cloud environment"
+variable "environment_id" {
+  description = "Existing Confluent Cloud environment ID created manually before running Terraform (for example, env-abc123)."
   type        = string
+
+  validation {
+    condition     = can(regex("^env-[a-zA-Z0-9]+$", var.environment_id))
+    error_message = "environment_id must be a Confluent Cloud environment ID, for example env-abc123."
+  }
 }
 
 variable "cluster_name" {

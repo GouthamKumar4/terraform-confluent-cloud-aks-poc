@@ -1,8 +1,6 @@
 terraform {
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "yourprojtfstate"
-    container_name       = "tfstate"
-    key                  = "poc/confluent-kafka/poc.tfstate"
-  }
+  # Configure with backend.hcl after manually creating the Azure Storage
+  # account/container prerequisite:
+  # terraform init -backend-config=backend.hcl
+  backend "azurerm" {}
 }

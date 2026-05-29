@@ -25,7 +25,7 @@ resource "azurerm_log_analytics_workspace" "this" {
 module "confluent" {
   source = "../../modules/confluent"
 
-  environment_name      = local.names.confluent_env
+  environment_id        = var.confluent_environment_id
   cluster_name          = local.names.confluent_cluster
   confluent_region      = var.confluent_region
   cku_count             = var.confluent_cku_count

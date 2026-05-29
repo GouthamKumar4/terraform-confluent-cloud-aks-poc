@@ -72,6 +72,16 @@ variable "confluent_cloud_api_secret" {
   }
 }
 
+variable "confluent_environment_id" {
+  description = "Existing Confluent Cloud environment ID created manually before running Terraform (for example, env-abc123)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^env-[a-zA-Z0-9]+$", var.confluent_environment_id))
+    error_message = "confluent_environment_id must be a Confluent Cloud environment ID, for example env-abc123."
+  }
+}
+
 variable "confluent_region" {
   description = "Confluent Cloud region"
   type        = string

@@ -42,7 +42,6 @@ locals {
     { for k, v in azurecaf_name.this : k => v.result },
     {
       # Confluent Cloud Resources (manual — not in Azure, CAF doesn't apply)
-      confluent_env     = local.env_short
       confluent_network = "net-kafka-${local.env_short}-${local.suffix}"
       confluent_cluster = "kafka-${local.env_short}-${local.suffix}"
       confluent_sa      = "sa-app-${local.env_short}-${local.suffix}"

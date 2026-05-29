@@ -12,8 +12,10 @@ unique_suffix     = "001"
 location = "westeurope"
 
 # --- Confluent ---
-confluent_region    = "westeurope"
-confluent_cku_count = 1
+# Existing Confluent environment created manually in the UI/CLI.
+confluent_environment_id = "env-abc123"
+confluent_region         = "westeurope"
+confluent_cku_count      = 1
 
 topics = [
   { name = "orders", partitions = 3, config = {} },

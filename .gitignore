@@ -26,3 +26,7 @@ Thumbs.db
 *.pem
 *.key
 .env
+
+# Local backend config
+**/backend.hcl
+!**/backend.hcl.example
