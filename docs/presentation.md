@@ -342,21 +342,19 @@ This is the core success criteria of the POC.
 
 # 📂 Documentation Navigation
 
-| # | Document | Contents |
-|:-:|----------|----------|
-| 1 | [Runbook](04-runsteps-and-verification/runbook.md) | Prerequisites, execution steps, verification (V1–V10), cleanup |
-| 2 | [Architecture](architecture.md) | Full system design + resource diagram |
-| 3 | [Network Design](02-design/network-design.md) | PrivateLink, DNS flow, IP plan, subnet sizing |
-| 4 | [Security & Permissions](02-design/security-and-permissions.md) | Identity model, RBAC, secrets |
-| 5 | [ADR-001: Dedicated Kafka](02-design/decisions/001-dedicated-kafka-tier.md) | Why Dedicated over Basic/Standard |
-| 6 | [ADR-002: PrivateLink](02-design/decisions/002-privatelink-connectivity.md) | Why PrivateLink over VNet peering |
-| 7 | [ADR-003: Workload Identity](02-design/decisions/003-workload-identity-for-secrets.md) | OIDC federation for Key Vault |
-| 8 | [ADR-004: Key Vault RBAC](02-design/decisions/004-keyvault-rbac-over-access-policies.md) | RBAC over access policies |
-| 9 | [ADR-005: Azure CAF Naming](02-design/decisions/005-azure-caf-naming.md) | Consistent naming via azurecaf |
-| 10 | [ADR-006: Azure CNI](02-design/decisions/006-azure-cni-for-aks.md) | VNet-integrated pods |
-| 11 | [ADR-007: Private AKS](02-design/decisions/007-private-aks-cluster.md) | No public API server |
-| 12 | [ADR-008: Calico](02-design/decisions/008-calico-network-policy.md) | Network policy engine |
-| 13 | [Terraform Modules](03-implementation/terraform-modules.md) | Module design, variables, validation |
-| 14 | [Resource Details](03-implementation/resource-details.md) | All provisioned resources |
-| 15 | [Issues & Resolutions](05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
-| 16 | [Future Improvements](05-observations/future-improvements.md) | Production roadmap |
+| 1 | [Runbook](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/04-runsteps-and-verification/runbook.md) | Prerequisites, execution steps, verification (V1–V10), cleanup |
+| 2 | [Architecture](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/architecture.md) | Full system design + resource diagram |
+| 3 | [Network Design](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/network-design.md) | PrivateLink, DNS flow, IP plan, subnet sizing |
+| 4 | [Security & Permissions](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/security-and-permissions.md) | Identity model, RBAC, secrets |
+| 5 | [ADR-001: Dedicated Kafka](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/001-dedicated-kafka-tier.md) | Why Dedicated over Basic/Standard |
+| 6 | [ADR-002: PrivateLink](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/002-privatelink-connectivity.md) | Why PrivateLink over VNet peering |
+| 7 | [ADR-003: Workload Identity](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/003-workload-identity-for-secrets.md) | OIDC federation for Key Vault |
+| 8 | [ADR-004: Key Vault RBAC](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/004-keyvault-rbac-over-access-policies.md) | RBAC over access policies |
+| 9 | [ADR-005: Azure CAF Naming](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/005-azure-caf-naming.md) | Consistent naming via azurecaf |
+| 10 | [ADR-006: Azure CNI](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/006-azure-cni-for-aks.md) | VNet-integrated pods |
+| 11 | [ADR-007: Private AKS](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/007-private-aks-cluster.md) | No public API server |
+| 12 | [ADR-008: Calico](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/008-calico-network-policy.md) | Network policy engine |
+| 13 | [Terraform Modules](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/03-implementation/terraform-modules.md) | Module design, variables, validation |
+| 14 | [Resource Details](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/03-implementation/resource-details.md) | All provisioned resources |
+| 15 | [Issues & Resolutions](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
+| 16 | [Future Improvements](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/05-observations/future-improvements.md) | Production roadmap |
