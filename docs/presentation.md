@@ -3,19 +3,35 @@ marp: true
 theme: gaia
 paginate: true
 backgroundColor: #fff
-color: #333
+backgroundImage: url('assets/backgroundimage.jpg')
+backgroundSize: cover
+color: #000
 style: |
-  section { font-size: 22px; padding: 40px 50px; }
-  h1 { color: #0078d4; font-size: 34px; margin-bottom: 16px; }
-  h2 { color: #555; font-size: 22px; }
-  table { font-size: 18px; width: 100%; }
-  th { background-color: #f0f6ff; }
-  pre { font-size: 14px; }
-  blockquote { font-size: 17px; border-left: 4px solid #0078d4; padding: 8px 16px; background: #f8f9fa; }
+  section { font-size: 24px; padding: 40px 50px; color: #000; }
+  h1 { color: #0078d4; font-size: 36px; margin-bottom: 16px; }
+  h2 { color: #333; font-size: 24px; }
+  table { font-size: 20px; width: 100%; }
+  th { background-color: rgba(240,246,255,0.85); }
+  pre { font-size: 16px; background: rgba(255,255,255,0.9); }
+  pre code { color: #000 !important; }
+  code { color: #000; }
+  code span { color: #000 !important; }
+  blockquote { font-size: 19px; border-left: 4px solid #0078d4; padding: 8px 16px; background: rgba(248,249,250,0.9); }
   strong { color: #0078d4; }
-  footer { font-size: 11px; }
-  header { font-size: 11px; }
+  footer { font-size: 12px; }
+  header { font-size: 12px; }
   img { max-height: 420px; }
+  td, th { background: rgba(255,255,255,0.85); }
+---
+
+<!-- _backgroundColor: #000 -->
+<!-- _color: #fff -->
+<!-- _header: "" -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
+
+![bg cover](assets/cover.png)
+
 ---
 
 # POC Objective
@@ -287,6 +303,7 @@ This is the core success criteria of the POC.
 | Confluent cluster creation fails | Missing `confluent_network` resource | Added network + PrivateLink access to dependency chain |
 | Key Vault returns 403 on secret write | Deployer lacks Secrets Officer role | Added RBAC role assignment with `depends_on` |
 | Secrets appear in CI/terraform logs | Outputs not marked sensitive | Added `sensitive = true` to 5 outputs |
+| PrivateLink status stuck on "Pending" | Expected behavior | Documented as post-apply step (needs approval) |
 
 ---
 
@@ -357,8 +374,6 @@ This is the core success criteria of the POC.
 
 ---
 
-<!-- _backgroundColor: #0078d4 -->
-<!-- _color: #fff -->
 <!-- _header: "" -->
 <!-- _footer: "" -->
 <!-- _paginate: false -->
@@ -383,4 +398,4 @@ This is the core success criteria of the POC.
 | 14 | [Resource Details](03-implementation/resource-details.md) | All provisioned resources |
 | 15 | [Issues & Resolutions](05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
 | 16 | [Future Improvements](05-observations/future-improvements.md) | Production roadmap |
-
+| 17 | [CHANGELOG](../CHANGELOG.md) | All changes by category |

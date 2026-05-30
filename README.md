@@ -7,45 +7,8 @@ A proof-of-concept that provisions a **private** Confluent Cloud Kafka cluster (
 <!-- DIAGRAM PLACEHOLDER: Insert a simplified architecture overview image here -->
 <!-- Save as: docs/assets/architecture-hero.png — a clean, high-level visual for the README -->
 <!-- ![Architecture](docs/assets/architecture-hero.png) -->
-
+![Architecture](docs/assets/architecture-hero.png)
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        Azure Subscription (westeurope)                        │
-│                                                                              │
-│  ┌─────────────────────────────────────────┐                                 │
-│  │           VNet: 10.0.0.0/16             │                                 │
-│  │                                         │        ┌─────────────────────┐  │
-│  │  ┌─────────────────┐   PrivateLink      │        │  Confluent Cloud    │  │
-│  │  │ PE Subnet       │═══(Azure backbone)═╪═══════►│  westeurope         │  │
-│  │  │ 10.0.1.0/24     │   No public        │        │                     │  │
-│  │  │ [Private EP]    │   internet          │        │  ┌──────────────┐  │  │
-│  │  └─────────────────┘                    │        │  │ Kafka Cluster│  │  │
-│  │                                         │        │  │ Dedicated    │  │  │
-│  │  ┌─────────────────┐                    │        │  │ 1 CKU        │  │  │
-│  │  │ AKS Subnet      │                    │        │  └──────┬───────┘  │  │
-│  │  │ 10.0.4.0/22     │                    │        │         │          │  │
-│  │  │                 │                    │        │  ┌──────▼───────┐  │  │
-│  │  │  ┌───────────┐  │                    │        │  │ Topics       │  │  │
-│  │  │  │ AKS       │  │                    │        │  │ • orders     │  │  │
-│  │  │  │ Private API│  │                    │        │  │ • payments   │  │  │
-│  │  │  │ 2x D2s_v5 │  │                    │        │  └──────────────┘  │  │
-│  │  │  │ Workload  │  │                    │        │                     │  │
-│  │  │  │ Identity  │──┼────────────────────┼───────►│  SA + ACLs          │  │
-│  │  │  └─────┬─────┘  │                    │        └─────────────────────┘  │
-│  │  │        │        │                    │                                 │
-│  │  └────────┼────────┘                    │                                 │
-│  └───────────┼─────────────────────────────┘                                 │
-│              │ reads secrets                                                 │
-│              │ (managed identity + RBAC)                                     │
-│  ┌───────────▼──────────────┐    ┌──────────────────────────┐               │
-│  │  Key Vault               │    │  Private DNS Zone         │               │
-│  │  • confluent-api-key-id  │    │  privatelink.confluent.   │               │
-│  │  • confluent-api-secret  │    │  cloud                    │               │
-│  │  • kafka-bootstrap-ep    │    │  FQDN → 10.0.1.x         │               │
-│  │  RBAC + Purge Protection │    └──────────────────────────┘               │
-│  └──────────────────────────┘                                                │
-└──────────────────────────────────────────────────────────────────────────────┘
-
 Data Flow:  AKS Pod → Key Vault (get creds) → DNS (resolve FQDN) → Private EP → PrivateLink → Kafka
 ```
 
