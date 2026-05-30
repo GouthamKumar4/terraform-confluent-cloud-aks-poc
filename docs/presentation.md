@@ -384,4 +384,4 @@ This is the core success criteria of the POC.
 | 14 | [Resource Details](03-implementation/resource-details.md) | All provisioned resources |
 | 15 | [Issues & Resolutions](05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
 | 16 | [Future Improvements](05-observations/future-improvements.md) | Production roadmap |
-| 17 | [CHANGELOG](../CHANGELOG.md) | All changes by category |
+
