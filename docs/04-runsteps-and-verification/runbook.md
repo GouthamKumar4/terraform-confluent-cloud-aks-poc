@@ -514,52 +514,6 @@ terraform output confluent_topic_names
 <!-- SCREENSHOT: docs/assets/v1-confluent-resources.png -->
 ![alt text](image-4.png)
 ---
-
-### V2: Private Endpoint
-
-**Command:**
-```bash
-RG_NAME=$(terraform output -raw resource_group_name)
-
-az network private-endpoint list \
-  --resource-group $RG_NAME \
-  --query "[].{name:name, status:privateLinkServiceConnections[0].privateLinkServiceConnectionState.status}" \
-  -o table
-```
-
-**Expected:** Status = `Approved`
-
-**Actual output:**
-```
-Name
-------------------------------
-
-vnet-unpr-poc-001-confluent-pe Approved
-```
-
-![alt text](image-3.png)
-
----
-
-### V3: DNS Resolution
-
-**Command:**
-```bash
-AKS_NAME=$(terraform output -raw aks_cluster_name)
-
-az aks command invoke \
-  --resource-group $RG_NAME \
-  --name $AKS_NAME \
-  --command "nslookup <bootstrap-fqdn>"
-```
-
-**Expected:** Resolves to private IP (10.0.1.x), NOT a public IP
-
-**Actual output:**
-![alt text](image-8.png)
-
----
-
 ### V4: AKS Cluster
 
 Check in portal AKS cluster is provisioned
@@ -588,88 +542,49 @@ kafka-bootstrap-endpoint
 
 ---
 
-### V6: Produce Message
-
-**Commands:**
-```bash
-# Deploy a test pod with kafka tools
-az aks command invoke \
-  --resource-group $RG_NAME \
-  --name $AKS_NAME \
-  --command "kubectl run kafka-test --image=confluentinc/cp-kafka:latest --command -- sleep 3600"
-
-# Wait for pod ready, then produce
-az aks command invoke \
-  --resource-group $RG_NAME \
-  --name $AKS_NAME \
-  --command "kubectl exec kafka-test -- kafka-console-producer --broker-list <bootstrap-endpoint>:9092 \
-    --producer-property security.protocol=SASL_SSL \
-    --producer-property sasl.mechanism=PLAIN \
-    --producer-property 'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"<api-key-id>\" password=\"<api-key-secret>\";' \
-    --topic orders <<< 'hello-kafka-poc'"
-```
-
-**Expected:** Message produced without errors
-
-**Actual output:**
-```
-(paste here)
-```
-
-<!-- SCREENSHOT: docs/assets/v6-produce.png -->
-
----
-
-### V7: Consume Message
+### V2: Private Endpoint
 
 **Command:**
 ```bash
+RG_NAME=$(terraform output -raw resource_group_name)
+
+az network private-endpoint list \
+  --resource-group $RG_NAME \
+  --query "[].{name:name, status:privateLinkServiceConnections[0].privateLinkServiceConnectionState.status}" \
+  -o table
+```
+
+**Expected:** Status = `Approved`
+
+**Actual output:**
+```
+Name
+------------------------------
+
+vnet-unpr-poc-001-confluent-pe Approved
+```
+
+![alt text](image-3.png)
+
+---
+
+### V3: Verify Kafka private dns bootstrap endpoint whether from cluster DNS Resolution happening or not
+
+**Command:**
+```bash
+AKS_NAME=$(terraform output -raw aks_cluster_name)
+
 az aks command invoke \
   --resource-group $RG_NAME \
   --name $AKS_NAME \
-  --command "kubectl exec kafka-test -- kafka-console-consumer --bootstrap-server <bootstrap-endpoint>:9092 \
-    --consumer-property security.protocol=SASL_SSL \
-    --consumer-property sasl.mechanism=PLAIN \
-    --consumer-property 'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"<api-key-id>\" password=\"<api-key-secret>\";' \
-    --topic orders --from-beginning --max-messages 1"
+  --command "nslookup <bootstrap-fqdn>"
 ```
 
-**Expected:** Output: `hello-kafka-poc`
+**Expected:** Resolves to private IP (10.0.1.x), NOT a public IP
 
 **Actual output:**
-```
-(paste here)
-```
 
-<!-- SCREENSHOT: docs/assets/v7-consume.png -->
-
----
-
-### V8: Negative Test — Unauthorized Access
-
-**Command:** Same as V6/V7 but with an **invalid API key**.
-
-**Expected:** Connection refused or authentication error
-
-**Actual output:**
-```
-(paste here)
-```
-
-<!-- SCREENSHOT: docs/assets/v8-unauthorized.png -->
-
----
-
-### Terraform Apply Summary
-
-| Metric | Value |
-|--------|-------|
-| Resources created | _(fill in)_ |
-| Apply duration | _(fill in)_ |
-| Warnings | _(fill in)_ |
-| Errors | 0 |
-
-<!-- SCREENSHOT: docs/assets/terraform-apply-summary.png -->
+![alt text](image-8.png)
 
 ---
 
@@ -678,15 +593,11 @@ az aks command invoke \
 cd terraform/environments/poc
 terraform destroy -var-file=poc.tfvars
 ```
-
----
-
 ## Troubleshooting
 
 | Issue | Resolution |
 |-------|-----------|
-| Private endpoint stuck in "Pending" | Check Confluent Console → approve connection |
 | DNS resolution fails from AKS | Verify private DNS zone is linked to VNet |
 | Key Vault access denied | Check RBAC role assignment for AKS identity |
-| Confluent API key fails | Ensure key is cluster-scoped, not org-scoped |
+| Confluent topic creation fails | As its private cluster we have to create topics from same network or confluent cli or cloud conole cli or from aks pod which has private endpoint |
 | Terraform state lock | Run `terraform force-unlock <LOCK_ID>` |

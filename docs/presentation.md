@@ -287,7 +287,6 @@ This is the core success criteria of the POC.
 | Confluent cluster creation fails | Missing `confluent_network` resource | Added network + PrivateLink access to dependency chain |
 | Key Vault returns 403 on secret write | Deployer lacks Secrets Officer role | Added RBAC role assignment with `depends_on` |
 | Secrets appear in CI/terraform logs | Outputs not marked sensitive | Added `sensitive = true` to 5 outputs |
-| PrivateLink status stuck on "Pending" | Expected behavior | Documented as post-apply step (needs approval) |
 
 ---
 
