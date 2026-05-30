@@ -593,11 +593,3 @@ az aks command invoke \
 cd terraform/environments/poc
 terraform destroy -var-file=poc.tfvars
 ```
-## Troubleshooting
-
-| Issue | Resolution |
-|-------|-----------|
-| DNS resolution fails from AKS | Verify private DNS zone is linked to VNet |
-| Key Vault access denied | Check RBAC role assignment for AKS identity |
-| Confluent topic creation fails | As its private cluster we have to create topics from same network or confluent cli or cloud conole cli or from aks pod which has private endpoint |
-| Terraform state lock | Run `terraform force-unlock <LOCK_ID>` |
