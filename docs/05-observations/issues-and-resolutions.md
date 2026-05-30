@@ -15,7 +15,7 @@
 | 5 | PrivateLink | PE stuck in "Pending" state | Manual approval in Confluent Console | 🟡 Expected |
 | 6 | RBAC | Key Vault access denied during apply | Added deployer → Secrets Officer role | 🔴 Blocker |
 | 7 | Provider | Features block relied on implicit defaults | Made all values explicit | 🟡 Improvement |
-
+| 8 | Topic creation  | Topic creation using terraform not able to do |Using AKS pod or from same network or from confluent CLI we have to create it | 🔴 Blocker |
 ---
 
 ## Issue 1: Missing Confluent Network Resource
@@ -158,3 +158,8 @@ features {
 ```
 
 **Lesson:** Always pin provider feature flags. "Explicit is better than implicit."
+## Issue 8: Topic creation using terraform is failed
+**Problem:**
+ Topic creation using terraform not able to do becuase of kafaka clsuter in private network 
+**Resolution:**
+So Using AKS pod or from same network or from confluent CLI we have to create it
