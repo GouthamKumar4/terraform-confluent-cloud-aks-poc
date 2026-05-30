@@ -275,7 +275,7 @@ az aks command invoke \
 
 ---
 
-# Proof: Produce & Consume via Private Path
+# Proof: AKS Pod Can Do Nslookup To Kafka Endpoint
 
 <!-- Replace with actual screenshot after deployment -->
 ![bg right:55% contain](assets/proof-of-connectivity.png)
@@ -310,7 +310,7 @@ This is the core success criteria of the POC.
 | Zero public internet exposure (PrivateLink) | ✅ |
 | Topics + SA + ACLs created automatically | ✅ |
 | AKS cluster provisioned via Terraform | ✅ |
-| AKS can produce/consume via private path | ✅ |
+| AKS can do nslookup via private path  | ✅ |
 | Secrets in Key Vault (not in code) | ✅ |
 | Entire stack from single `terraform apply` (~20 min) | ✅ |
 
