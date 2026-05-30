@@ -412,7 +412,7 @@ az role assignment list \
 
 ---
 
-### V1: Confluent Resources
+### V1: Verify Confluent Resources
 
 **Commands:**
 ```bash
@@ -425,11 +425,16 @@ terraform output confluent_topic_names
 
 **Actual output:**
 ```
-(paste here)
+"env-5d180n"
+"lkc-gqp3z9n"
+[
+  "orders",
+  "payments",
+]
 ```
 
 <!-- SCREENSHOT: docs/assets/v1-confluent-resources.png -->
-
+![alt text](image-4.png)
 ---
 
 ### V2: Private Endpoint
@@ -483,21 +488,11 @@ az aks command invoke \
 
 ### V4: AKS Cluster
 
-**Command:**
-```bash
-az aks command invoke \
-  --resource-group $RG_NAME \
-  --name $AKS_NAME \
-  --command "kubectl get nodes -o wide"
-```
+Check in portal AKS cluster is provisioned
 
-**Expected:** 2+ nodes in `Ready` state
 
-> **Note:** This cluster is private (`private_cluster_enabled = true`). Direct `kubectl` requires VNet access (VPN/Bastion). For POC, use `az aks command invoke` which tunnels through ARM.
 
-**Actual output:**
-```
-(paste here)
+
 ```
 
 <!-- SCREENSHOT: docs/assets/v4-aks-nodes.png -->
