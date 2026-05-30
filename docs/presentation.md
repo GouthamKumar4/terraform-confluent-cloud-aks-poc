@@ -18,24 +18,9 @@ style: |
   img { max-height: 420px; }
 ---
 
-<!-- _backgroundColor: #0078d4 -->
-<!-- _color: #fff -->
-<!-- _header: "" -->
-<!-- _footer: "" -->
-<!-- _paginate: false -->
-
-# Private Confluent Cloud Kafka + AKS
-
-## Terraform Proof of Concept
-
-📅 May 2026
-📋 For asynchronous review (~15 min read)
-
----
-
 # POC Objective
 
-> **Prove** that we can provision a private Confluent Kafka cluster, create topics with proper access controls, and connect from AKS — entirely via Terraform, with zero public internet exposure.
+> **Prove** that we can provision a private Confluent Kafka cluster, create topics with proper access controls, and connect from AKS — via Terraform for infrastructure and Kafka CLI (from private network) for data-plane operations, with zero public internet exposure.
 
 **Acceptance criteria:**
 
@@ -107,8 +92,6 @@ AKS Pod
 
 # Security Model
 
-<!-- Replace with your diagram: docs/assets/security-layers.png -->
-![bg right:50% contain](assets/security-layers.png)
 
 **Network layer:**
 - PrivateLink — Kafka has no public endpoint
@@ -127,9 +110,6 @@ AKS Pod
 ---
 
 # What Terraform Creates — Confluent
-
-<!-- Replace with your diagram: docs/assets/confluent-resource-chain.png -->
-![bg right:50% contain](assets/confluent-resource-chain.png)
 
 **Dependency chain (order matters):**
 
@@ -384,9 +364,24 @@ This is the core success criteria of the POC.
 <!-- _footer: "" -->
 <!-- _paginate: false -->
 
-# Thank You
+# 📂 Documentation Navigation
 
-📄 **Full runbook:** `docs/runbook.md`
-📦 **Terraform code:** `terraform/` directory
-📊 **This deck:** `docs/presentation.md`
-📝 **Change log:** `CHANGELOG.md`
+| # | Document | Contents |
+|:-:|----------|----------|
+| 1 | [Runbook](04-runsteps-and-verification/runbook.md) | Prerequisites, execution steps, verification (V1–V10), cleanup |
+| 2 | [Architecture](architecture.md) | Full system design + resource diagram |
+| 3 | [Network Design](02-design/network-design.md) | PrivateLink, DNS flow, IP plan, subnet sizing |
+| 4 | [Security & Permissions](02-design/security-and-permissions.md) | Identity model, RBAC, secrets |
+| 5 | [ADR-001: Dedicated Kafka](02-design/decisions/001-dedicated-kafka-tier.md) | Why Dedicated over Basic/Standard |
+| 6 | [ADR-002: PrivateLink](02-design/decisions/002-privatelink-connectivity.md) | Why PrivateLink over VNet peering |
+| 7 | [ADR-003: Workload Identity](02-design/decisions/003-workload-identity-for-secrets.md) | OIDC federation for Key Vault |
+| 8 | [ADR-004: Key Vault RBAC](02-design/decisions/004-keyvault-rbac-over-access-policies.md) | RBAC over access policies |
+| 9 | [ADR-005: Azure CAF Naming](02-design/decisions/005-azure-caf-naming.md) | Consistent naming via azurecaf |
+| 10 | [ADR-006: Azure CNI](02-design/decisions/006-azure-cni-for-aks.md) | VNet-integrated pods |
+| 11 | [ADR-007: Private AKS](02-design/decisions/007-private-aks-cluster.md) | No public API server |
+| 12 | [ADR-008: Calico](02-design/decisions/008-calico-network-policy.md) | Network policy engine |
+| 13 | [Terraform Modules](03-implementation/terraform-modules.md) | Module design, variables, validation |
+| 14 | [Resource Details](03-implementation/resource-details.md) | All provisioned resources |
+| 15 | [Issues & Resolutions](05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
+| 16 | [Future Improvements](05-observations/future-improvements.md) | Production roadmap |
+| 17 | [CHANGELOG](../CHANGELOG.md) | All changes by category |

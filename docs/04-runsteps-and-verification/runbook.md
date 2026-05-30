@@ -340,7 +340,85 @@ Expected: All resources created. Note outputs.
 In some setups, the Private Link connection needs approval on the Confluent side:
 - Check Confluent Console → Networking → Private Link
 - Or wait for auto-approval if configured
+### Step 6: Create Kafka Topics & ACLs (from Private Network)
 
+> **Why not via Terraform?** The Confluent Kafka REST API (used for topics/ACLs) is a **data-plane** operation that goes through the PrivateLink endpoint. This endpoint is only reachable from inside the VNet — not from your local machine. This is [by design](https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/dedicated-privatelink-azure-kafka-acls) per Confluent's official guidance.
+>
+> **Options for topic creation:**
+> | Method | Works from local machine? | Recommended for |
+> |--------|---------------------------|------------------|
+> | AKS pod with kafka-topics CLI | No (runs inside VNet via `az aks command invoke`) | POC, automation |
+> | Confluent Cloud UI (Resource Metadata Access enabled) | Yes (read-only view) | Viewing only — cannot create/edit/delete |
+> | NGINX/HAProxy in VNet | Yes (via proxy) | Production |
+> | Second Terraform run from VM in VNet | No (requires VNet compute) | CI/CD pipelines |
+
+```bash
+# Get credentials from Key Vault
+API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-id --query value -o tsv)
+API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-secret --query value -o tsv)
+BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name kafka-bootstrap-endpoint --query value -o tsv)
+
+# Deploy Kafka tools pod in AKS
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl run kafka-setup --image=confluentinc/cp-kafka:7.5.0 --restart=Never --command -- sleep 600"
+
+# Wait for pod
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl wait --for=condition=Ready pod/kafka-setup --timeout=120s"
+```
+
+#### Create Topics
+```bash
+# Create client config inside the pod
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- bash -c 'cat > /tmp/client.properties << EOF
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"$API_KEY_ID\" password=\"$API_KEY_SECRET\";
+EOF'"
+
+# Create topic: orders
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --create --topic orders --partitions 6"
+
+# Create topic: payments
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --create --topic payments --partitions 6"
+
+# List topics (verify)
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --list"
+```
+
+#### Create ACLs
+
+> ACLs are automatically granted because the API key is owned by the service account that has `ResourceOwner` on the cluster. If using granular ACLs, create them via the Confluent Cloud UI or run `kafka-acls` from the pod.
+
+#### Cleanup setup pod
+```bash
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl delete pod kafka-setup --force --grace-period=0"
+```
+
+Expected: Topics `orders` and `payments` created, visible in `--list` output.
+
+---
+
+## Verification Steps
 ---
 
 ## Verification Steps
@@ -478,26 +556,15 @@ az aks command invoke \
 **Expected:** Resolves to private IP (10.0.1.x), NOT a public IP
 
 **Actual output:**
-```
-(paste here)
-```
-
-<!-- SCREENSHOT: docs/assets/v3-dns-resolution.png -->
+![alt text](image-8.png)
 
 ---
 
 ### V4: AKS Cluster
 
 Check in portal AKS cluster is provisioned
-
-
-
-
-```
-
-<!-- SCREENSHOT: docs/assets/v4-aks-nodes.png -->
-
----
+![alt text](image-5.png)
+![alt text](image-6.png)
 
 ### V5: Key Vault Secrets
 
@@ -516,11 +583,8 @@ kafka-bootstrap-endpoint
 ```
 
 **Actual output:**
-```
-(paste here)
-```
 
-<!-- SCREENSHOT: docs/assets/v5-keyvault-secrets.png -->
+![alt text](image-7.png)
 
 ---
 

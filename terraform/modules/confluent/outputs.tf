@@ -52,6 +52,6 @@ output "confluent_dns_domain" {
 }
 
 output "topic_names" {
-  description = "List of created topic names"
-  value       = [for t in confluent_kafka_topic.topics : t.topic_name]
+  description = "List of topic names (configured via var.topics, created via Confluent UI/CLI)"
+  value       = [for t in var.topics : t.name]
 }

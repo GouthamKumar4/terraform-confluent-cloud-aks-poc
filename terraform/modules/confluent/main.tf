@@ -72,8 +72,9 @@ resource "confluent_service_account" "app" {
 
 # API Key for the service account
 resource "confluent_api_key" "app" {
-  display_name = "${var.service_account_name}-api-key"
-  description  = "API key for ${var.service_account_name}"
+  display_name           = "${var.service_account_name}-api-key"
+  description            = "API key for ${var.service_account_name}"
+  disable_wait_for_ready = true
 
   owner {
     id          = confluent_service_account.app.id
@@ -92,89 +93,94 @@ resource "confluent_api_key" "app" {
   }
 }
 
-# Topics
-resource "confluent_kafka_topic" "topics" {
-  for_each = { for t in var.topics : t.name => t }
+###############################################################################
+# Topics and ACLs
+# NOTE: These resources use the Kafka REST API (data plane), which is only
+# accessible via PrivateLink from inside the VNet. They cannot be created
+# from a local machine. Create these via the Confluent Cloud UI or CLI,
+# or run Terraform from a host inside the private network.
+# See: https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/dedicated-privatelink-azure-kafka-acls
+###############################################################################
 
-  kafka_cluster {
-    id = confluent_kafka_cluster.this.id
-  }
+# resource "confluent_kafka_topic" "topics" {
+#   for_each = { for t in var.topics : t.name => t }
+#
+#   kafka_cluster {
+#     id = confluent_kafka_cluster.this.id
+#   }
+#
+#   topic_name       = each.value.name
+#   partitions_count = each.value.partitions
+#   rest_endpoint    = confluent_kafka_cluster.this.rest_endpoint
+#
+#   config = each.value.config
+#
+#   credentials {
+#     key    = confluent_api_key.app.id
+#     secret = confluent_api_key.app.secret
+#   }
+# }
 
-  topic_name       = each.value.name
-  partitions_count = each.value.partitions
-  rest_endpoint    = confluent_kafka_cluster.this.rest_endpoint
+# resource "confluent_kafka_acl" "producer" {
+#   for_each = { for t in var.topics : t.name => t }
+#
+#   kafka_cluster {
+#     id = confluent_kafka_cluster.this.id
+#   }
+#
+#   resource_type = "TOPIC"
+#   resource_name = each.value.name
+#   pattern_type  = "LITERAL"
+#   principal     = "User:${confluent_service_account.app.id}"
+#   host          = "*"
+#   operation     = "WRITE"
+#   permission    = "ALLOW"
+#   rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
+#
+#   credentials {
+#     key    = confluent_api_key.app.id
+#     secret = confluent_api_key.app.secret
+#   }
+# }
 
-  config = each.value.config
+# resource "confluent_kafka_acl" "consumer" {
+#   for_each = { for t in var.topics : t.name => t }
+#
+#   kafka_cluster {
+#     id = confluent_kafka_cluster.this.id
+#   }
+#
+#   resource_type = "TOPIC"
+#   resource_name = each.value.name
+#   pattern_type  = "LITERAL"
+#   principal     = "User:${confluent_service_account.app.id}"
+#   host          = "*"
+#   operation     = "READ"
+#   permission    = "ALLOW"
+#   rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
+#
+#   credentials {
+#     key    = confluent_api_key.app.id
+#     secret = confluent_api_key.app.secret
+#   }
+# }
 
-  credentials {
-    key    = confluent_api_key.app.id
-    secret = confluent_api_key.app.secret
-  }
-}
-
-# ACLs — Producer permissions
-resource "confluent_kafka_acl" "producer" {
-  for_each = { for t in var.topics : t.name => t }
-
-  kafka_cluster {
-    id = confluent_kafka_cluster.this.id
-  }
-
-  resource_type = "TOPIC"
-  resource_name = each.value.name
-  pattern_type  = "LITERAL"
-  principal     = "User:${confluent_service_account.app.id}"
-  host          = "*"
-  operation     = "WRITE"
-  permission    = "ALLOW"
-  rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
-
-  credentials {
-    key    = confluent_api_key.app.id
-    secret = confluent_api_key.app.secret
-  }
-}
-
-# ACLs — Consumer permissions
-resource "confluent_kafka_acl" "consumer" {
-  for_each = { for t in var.topics : t.name => t }
-
-  kafka_cluster {
-    id = confluent_kafka_cluster.this.id
-  }
-
-  resource_type = "TOPIC"
-  resource_name = each.value.name
-  pattern_type  = "LITERAL"
-  principal     = "User:${confluent_service_account.app.id}"
-  host          = "*"
-  operation     = "READ"
-  permission    = "ALLOW"
-  rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
-
-  credentials {
-    key    = confluent_api_key.app.id
-    secret = confluent_api_key.app.secret
-  }
-}
-
-# ACL — Consumer group read (required for consumers)
-resource "confluent_kafka_acl" "consumer_group" {
-  kafka_cluster {
-    id = confluent_kafka_cluster.this.id
-  }
-
-  resource_type = "GROUP"
-  resource_name = var.consumer_group_prefix
-  pattern_type  = "PREFIXED"
-  principal     = "User:${confluent_service_account.app.id}"
-  host          = "*"
-  operation     = "READ"
-  permission    = "ALLOW"
-  rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
-
-  credentials {
-    key    = confluent_api_key.app.id
-    secret = confluent_api_key.app.secret
-  }
-}
+# resource "confluent_kafka_acl" "consumer_group" {
+#   kafka_cluster {
+#     id = confluent_kafka_cluster.this.id
+#   }
+#
+#   resource_type = "GROUP"
+#   resource_name = var.consumer_group_prefix
+#   pattern_type  = "PREFIXED"
+#   principal     = "User:${confluent_service_account.app.id}"
+#   host          = "*"
+#   operation     = "READ"
+#   permission    = "ALLOW"
+#   rest_endpoint = confluent_kafka_cluster.this.rest_endpoint
+#
+#   credentials {
+#     key    = confluent_api_key.app.id
+#     secret = confluent_api_key.app.secret
+#   }
+# }
