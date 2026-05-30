@@ -10,14 +10,13 @@
 |---|-------------|----------|:------:|:------:|:--------:|
 | ~~1~~ | ~~OIDC for CI/CD authentication~~ | ~~Security~~ | — | — | ✅ Done |
 | 2 | Workload Identity per pod | Security | Medium | 🔴 High | P1 |
-| 3 | Disable AKS local accounts | Security | Low | 🟠 Medium | P1 |
-| 4 | Secret rotation automation | Security | High | 🔴 High | P2 |
-| 5 | tflint + tfsec in CI/CD | Quality | Low | 🟠 Medium | P2 |
-| 6 | Policy-as-code (OPA/Sentinel) | Governance | High | 🟠 Medium | P2 |
-| 7 | Multi-zone PrivateLink | Reliability | Medium | 🟠 Medium | P2 |
-| 8 | Observability stack | Operations | Medium | 🔴 High | P2 |
-| 9 | Key Vault private endpoint | Security | Low | 🟡 Low | P3 |
-| 10 | Cost optimization (CKU right-sizing) | Cost | Low | 🟡 Low | P3 |
+| 3 | Secret rotation automation | Security | High | 🔴 High | P2 |
+| 4 | tflint + tfsec in CI/CD | Quality | Low | 🟠 Medium | P2 |
+| 5 | Policy-as-code (OPA/Sentinel) | Governance | High | 🟠 Medium | P2 |
+| 6 | Multi-zone PrivateLink | Reliability | Medium | 🟠 Medium | P2 |
+| 7 | Observability stack | Operations | Medium | 🔴 High | P2 |
+| 8 | Key Vault private endpoint | Security | Low | 🟡 Low | P3 |
+| 9 | Cost optimization (CKU right-sizing) | Cost | Low | 🟡 Low | P3 |
 
 ---
 
@@ -49,18 +48,7 @@
 
 ---
 
-### 3. Disable AKS Local Accounts
-
-**Current state:** `local_account_disabled = false` — local admin kubeconfig works.
-**Target state:** `local_account_disabled = true` — only Entra ID auth accepted.
-
-**Why it matters:** Local accounts bypass Azure AD audit trail and RBAC.
-
-**Prerequisite:** Must have Entra ID admin groups configured and tested first (`admin_group_object_ids`).
-
----
-
-### 4. Secret Rotation Automation
+### 3. Secret Rotation Automation
 
 **Current state:** Confluent API keys are static — no rotation.
 **Target state:** Automated rotation using Azure Event Grid + Azure Functions.
@@ -75,7 +63,7 @@ Key Vault near-expiry event → Event Grid → Azure Function →
 
 ---
 
-### 5. tflint + tfsec in CI/CD
+### 4. tflint + tfsec in CI/CD
 
 **Current state:** CI/CD runs `terraform fmt` + `terraform validate` only.
 **Target state:** Add static analysis:
@@ -86,7 +74,7 @@ Key Vault near-expiry event → Event Grid → Azure Function →
 
 ---
 
-### 6. Policy-as-Code (OPA/Sentinel)
+### 5. Policy-as-Code (OPA/Sentinel)
 
 **Current state:** No policy enforcement.
 **Target state:** OPA Gatekeeper on AKS + Sentinel/OPA for Terraform plan validation.
@@ -99,7 +87,7 @@ Key Vault near-expiry event → Event Grid → Azure Function →
 
 ---
 
-### 7. Multi-Zone PrivateLink
+### 6. Multi-Zone PrivateLink
 
 **Current state:** Single Private Endpoint in zone 1.
 **Target state:** Private Endpoints in all 3 availability zones for HA.
@@ -108,7 +96,7 @@ Key Vault near-expiry event → Event Grid → Azure Function →
 
 ---
 
-### 8. Observability Stack
+### 7. Observability Stack
 
 **Current state:** Log Analytics workspace exists, AKS Container Insights enabled. No Kafka metrics.
 **Target state:**
@@ -118,14 +106,14 @@ Key Vault near-expiry event → Event Grid → Azure Function →
 
 ---
 
-### 9. Key Vault Private Endpoint
+### 8. Key Vault Private Endpoint
 
 **Current state:** Key Vault accessible from allowed IPs + AzureServices bypass.
 **Target state:** Key Vault with its own Private Endpoint in the VNet — no public access at all.
 
 ---
 
-### 10. Cost Optimization
+### 9. Cost Optimization
 
 **Current state:** 1 CKU, single-zone, 2x D2s_v5 nodes.
 **Target state:** Right-size based on actual throughput during load testing.
