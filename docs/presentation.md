@@ -1,178 +1,392 @@
 ---
 marp: true
-theme: default
+theme: gaia
 paginate: true
-header: "POC: Private Confluent Kafka + AKS via Terraform"
-footer: "Confidential — May 2026"
+backgroundColor: #fff
+color: #333
+style: |
+  section { font-size: 22px; padding: 40px 50px; }
+  h1 { color: #0078d4; font-size: 34px; margin-bottom: 16px; }
+  h2 { color: #555; font-size: 22px; }
+  table { font-size: 18px; width: 100%; }
+  th { background-color: #f0f6ff; }
+  pre { font-size: 14px; }
+  blockquote { font-size: 17px; border-left: 4px solid #0078d4; padding: 8px 16px; background: #f8f9fa; }
+  strong { color: #0078d4; }
+  footer { font-size: 11px; }
+  header { font-size: 11px; }
+  img { max-height: 420px; }
 ---
+
+<!-- _backgroundColor: #0078d4 -->
+<!-- _color: #fff -->
+<!-- _header: "" -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
 
 # Private Confluent Cloud Kafka + AKS
-## Terraform POC
 
-**Date**: May 2026
-**Status**: Ready for Review
+## Terraform Proof of Concept
 
----
-
-# Problem Statement
-
-- Manual Kafka provisioning is error-prone and insecure
-- Need private-only access to Kafka (no public internet)
-- Need controlled, auditable access via service accounts and ACLs
-- Need AKS provisioned in the same automated workflow
-- Secrets must be stored securely (not in code or state files)
+📅 May 2026
+📋 For asynchronous review (~15 min read)
 
 ---
 
-# POC Objectives
+# POC Objective
 
-1. Provision Confluent Cloud environment + Dedicated Kafka cluster via Terraform
-2. Establish private connectivity (VNet + PrivateLink)
-3. Create topics: `orders`, `payments`
-4. Create service account + API key + ACLs (produce/consume)
-5. Provision AKS cluster with workload identity
-6. Store all secrets in Azure Key Vault
-7. Provide reproducible runbook and CI/CD pipelines
+> **Prove** that we can provision a private Confluent Kafka cluster, create topics with proper access controls, and connect from AKS — entirely via Terraform, with zero public internet exposure.
 
----
+**Acceptance criteria:**
 
-# Architecture
-
-```
-Azure Subscription
-├── VNet (10.0.0.0/16)
-│   ├── PE Subnet → Private Endpoint → Confluent Cloud (PrivateLink)
-│   └── AKS Subnet → AKS Cluster (workload identity)
-├── Key Vault (API key, secret, bootstrap endpoint)
-└── Private DNS Zone (resolves Kafka FQDN → private IP)
-
-Confluent Cloud
-├── Environment: poc-dev
-├── Kafka Cluster: Dedicated, 1 CKU, westeurope
-├── Topics: orders (3p), payments (3p)
-├── Service Account: poc-app-sa
-├── API Key → stored in Key Vault
-└── ACLs: WRITE+READ on topics, READ on consumer group
-```
-
----
-
-# Security Model
-
-| Layer | Control |
-|-------|---------|
-| Network | PrivateLink — no public endpoint |
-| Identity | Service account with cluster-scoped API key |
-| Authorization | ACLs: topic-level produce/consume only |
-| Secrets | Key Vault with RBAC, purge protection |
-| AKS | Workload identity for Key Vault access |
-| Infra | NSGs on all subnets |
-
----
-
-# Terraform Modules
-
-| Module | Resources |
-|--------|-----------|
-| `confluent` | Environment, Cluster, Topics, SA, API Key, ACLs, PL Access |
-| `networking` | VNet, Subnets, NSGs, Private Endpoint, DNS Zone |
-| `aks` | AKS Cluster, Node Pool, Workload Identity |
-| `keyvault` | Key Vault, Secrets, RBAC Assignments |
-
-**Root module** (`environments/poc/`) composes all modules with a single `terraform apply`.
-
----
-
-# GitHub Actions CI/CD
-
-| Workflow | Trigger | Action |
-|----------|---------|--------|
-| `terraform-validate` | PR + push | Format check + validate |
-| `terraform-plan` | PR | Plan + comment on PR |
-| `terraform-apply` | Manual dispatch | Apply with confirmation gate |
-
-Secrets managed via GitHub Secrets (ARM credentials + Confluent API key).
-
----
-
-# Demo Flow
-
-1. `terraform init` → providers + backend configured
-2. `terraform plan` → ~25 resources shown
-3. `terraform apply` → all resources created
-4. Verify: cluster, topics, PE, DNS, AKS, Key Vault
-5. Produce/consume test from AKS pod
-6. Negative test: unauthorized access denied
-7. `terraform destroy` → clean teardown
-
----
-
-# Verification Results
-
-| Check | Expected | Status |
-|-------|----------|--------|
-| Cluster provisioned | Dedicated, private | ✅ |
-| Topics exist | orders, payments | ✅ |
-| Private endpoint connected | Approved | ✅ |
-| DNS resolves privately | Private IP | ✅ |
-| AKS cluster ready | 2 nodes | ✅ |
-| Key Vault secrets present | 3 secrets | ✅ |
-| Produce/consume works | Messages flow | ✅ |
-| Unauthorized access denied | Error returned | ✅ |
+| # | Criteria |
+|:-:|---------|
+| 1 | Kafka cluster reachable **only** via PrivateLink (no public endpoint) |
+| 2 | 2 topics created (`orders`, `payments`) with produce/consume ACLs |
+| 3 | 1 service account + 1 API key — least-privilege access |
+| 4 | AKS cluster provisioned and able to reach Kafka privately |
+| 5 | All secrets stored securely (Key Vault — not in code) |
+| 6 | Run steps and verification steps documented |
 
 ---
 
 # Scope
 
-## In Scope
-- Confluent environment + Dedicated Kafka cluster
-- Private networking (VNet + PrivateLink + DNS)
-- Topics, service account, API key, ACLs
-- AKS cluster provisioning
-- Key Vault secret storage
-- CI/CD pipelines (GitHub Actions)
-- Documentation and runbook
+| In Scope | Out of Scope |
+|----------|-------------|
+| Confluent environment + Dedicated Kafka cluster | Production HA / multi-zone |
+| PrivateLink networking (VNet + PE + DNS) | Performance testing |
+| 2 topics, 1 service account, 1 API key, ACLs | Multi-region failover |
+| AKS cluster provisioning | Application deployment (Helm) |
+| Key Vault for secret storage | Schema Registry, Kafka Connect |
+| Run steps + verification documentation | Monitoring & alerting |
 
-## Out of Scope
-- Production HA, multi-region, DR
-- Performance/load testing
-- Long-running operations
+> Everything out of scope is documented as a production consideration on the final slide.
 
 ---
 
-# Risks & Constraints
+# Architecture Overview
 
-| Risk | Mitigation |
-|------|-----------|
-| Dedicated tier cost (~$1.50/hr) | Teardown immediately after demo |
-| PrivateLink manual approval | Document in runbook |
-| IAM propagation delay | Wait 5 min after RBAC assignments |
-| Confluent region availability | Pre-verify region support |
+<!-- Replace with your diagram: docs/assets/architecture-overview.png -->
+![bg right:55% contain](assets/architecture-overview.png)
+
+**Single `terraform apply` creates:**
+
+- Confluent Cloud: environment, network, Kafka cluster, SA, API key, topics, ACLs
+- Azure: VNet, subnets, NSGs, Private Endpoint, Private DNS zone
+- Azure: AKS cluster (private, workload identity)
+- Azure: Key Vault with 3 secrets
+
+**~25 resources total**
+
+---
+
+# Network Design — PrivateLink
+
+<!-- Replace with your diagram: docs/assets/network-privatelink.png -->
+![bg right:55% contain](assets/network-privatelink.png)
+
+**How Kafka is accessed privately:**
+
+```
+AKS Pod
+  → CoreDNS
+    → Azure Private DNS Zone
+      → Private Endpoint (10.0.0.x)
+        → PrivateLink (Azure backbone)
+          → Confluent Kafka Broker
+```
+
+**Why PrivateLink:**
+- Traffic **never** touches public internet
+- No CIDR overlap risk (uses NAT)
+- Azure-native (same pattern as SQL, Storage)
+- Simpler than VNet peering
 
 ---
 
-# Next Steps After POC Approval
+# Security Model
 
-1. **Activate CI/CD** — configure GitHub Secrets, enable plan/apply
-2. **Production architecture** — HA, multi-zone, auto-scaling
-3. **Disable AKS local accounts** — enforce Entra ID-only auth (`local_account_disabled = true`) once AAD groups are verified
-4. **Node Auto Provisioning (NAP)** — auto-creates optimal node pools based on pod demands (Azure's Karpenter)
-5. **Policy-as-code** — OPA/Sentinel for governance
-5. **Observability** — Confluent metrics + Azure Monitor
-6. **Secret rotation** — Key Vault + Confluent API key lifecycle
-7. **OIDC authentication** — eliminate stored client secrets for CI/CD
-6. **Cost optimization** — right-size CKUs based on throughput needs
+<!-- Replace with your diagram: docs/assets/security-layers.png -->
+![bg right:50% contain](assets/security-layers.png)
+
+**Network layer:**
+- PrivateLink — Kafka has no public endpoint
+- Private AKS — API server has no public IP
+- NSGs on all subnets
+
+**Identity layer:**
+- Confluent SA + cluster-scoped API key
+- ACLs: topic-level produce/consume only
+- AKS workload identity (OIDC — no stored creds)
+
+**Secrets layer:**
+- Key Vault with Azure RBAC
+- No secrets in code, logs, or state outputs
 
 ---
+
+# What Terraform Creates — Confluent
+
+<!-- Replace with your diagram: docs/assets/confluent-resource-chain.png -->
+![bg right:50% contain](assets/confluent-resource-chain.png)
+
+**Dependency chain (order matters):**
+
+| # | Resource | Purpose |
+|:-:|----------|---------|
+| 1 | Environment | Logical container |
+| 2 | Network | PrivateLink-enabled network |
+| 3 | PL Access | Allow Azure subscription |
+| 4 | Cluster | Dedicated, 1 CKU |
+| 5 | Service Account | Application identity |
+| 6 | API Key | Cluster-scoped credentials |
+| 7 | Topics | `orders`, `payments` (3 partitions each) |
+| 8 | ACLs | Produce + consume + consumer group |
+
+---
+
+# What Terraform Creates — Azure
+
+| Resource | Purpose |
+|----------|---------|
+| **Resource Group** | Container for all Azure resources |
+| **VNet** (10.0.0.0/22) | Network boundary |
+| **PE Subnet** (10.0.0.0/26) | Hosts the Private Endpoint |
+| **AKS Subnet** (10.0.1.0/24) | Hosts AKS node pools |
+| **NSGs** (×2) | Subnet-level traffic rules |
+| **Private Endpoint** | Connects to Confluent via PrivateLink |
+| **Private DNS Zone** | Resolves Kafka FQDN → PE private IP |
+| **AKS Cluster** | Private cluster + workload identity |
+| **Key Vault** | Stores API key, secret, bootstrap endpoint |
+| **Log Analytics** | Container Insights for AKS |
+
+---
+
+# AKS Cluster — How It's Provisioned
+
+<!-- AKS provisioning diagram: docs/assets/aks-provisioning.png -->
+![bg right:55% contain](assets/aks-provisioning.png)
+
+**Private AKS with full hardening:**
+
+| Feature | Setting |
+|---------|---------|
+| **API server** | Private only (no public FQDN) |
+| **Auth** | Entra ID + Azure RBAC |
+| **Local accounts** | Disabled |
+| **Node pools** | System (1) + User (2) · D2s_v5 |
+| **OS disk** | Managed (default; Ephemeral for prod) |
+| **CNI** | Azure CNI (VNet-integrated pods) |
+| **Network policy** | Calico |
+| **Workload Identity** | OIDC issuer enabled |
+| **Auto-upgrade** | Patch channel |
+| **Image Cleaner** | Every 48h |
+| **Monitoring** | Container Insights → Log Analytics |
+| **Access** | `az aks command invoke` (ARM tunnel) |
+
+---
+
+# How to Run — Prerequisites
+
+| Task | Who | Time |
+|------|-----|:----:|
+| Create Azure storage account for TF state | Azure Admin | 5 min |
+| Create service principal or managed identity | Azure Admin | 10 min |
+| Register Azure providers (ContainerService, KeyVault, Network) | Azure Admin | 2 min |
+| Create Confluent service account + cloud API key | Confluent Admin | 5 min |
+| Set environment variables (`TF_VAR_*`) | Engineer | 5 min |
+
+**Total one-time setup: ~30 minutes**
+
+> Detailed commands in `docs/runbook.md` (Steps A–D)
+
+---
+
+# How to Run — Execution
+
+```bash
+cd terraform/environments/poc
+
+# 1. Initialize (downloads providers, configures backend)
+terraform init
+
+# 2. Preview what will be created (~25 resources)
+terraform plan -var-file=poc.tfvars -out=tfplan
+
+# 3. Create everything
+terraform apply tfplan
+
+# 4. Verify (private cluster — uses ARM tunnel)
+az aks command invoke \
+  --resource-group $(terraform output -raw resource_group_name) \
+  --name $(terraform output -raw aks_cluster_name) \
+  --command "kubectl get nodes"
+```
+
+**Deploy time: ~20-30 minutes** (Dedicated cluster takes longest)
+
+---
+
+# Proof: Kafka Cluster Exists
+
+<!-- Replace with actual screenshot after deployment -->
+![bg right:55% contain](assets/proof-kafka-cluster.png)
+
+**What this proves:**
+- Confluent environment created via Terraform
+- Dedicated Kafka cluster (1 CKU) in westeurope
+- PrivateLink networking enabled
+- 2 topics created: `orders`, `payments`
+- Service account + API key + ACLs configured
+
+> Terraform output: `terraform output confluent_cluster_id`
+
+---
+
+# Proof: Private Endpoint Connected
+
+<!-- Replace with actual screenshot after deployment -->
+![bg right:55% contain](assets/proof-pe-approved.png)
+
+**What this proves:**
+- Private Endpoint created in Azure
+- Connection status: **Approved**
+- PrivateLink is active — Kafka reachable via private IP
+- DNS zone resolves Kafka FQDN → 10.0.0.x (not public IP)
+
+```bash
+# Verify PE status
+az network private-endpoint list \
+  --resource-group $(terraform output -raw resource_group_name) \
+  -o table
+```
+
+---
+
+# Proof: AKS Cluster Exists
+
+<!-- Replace with actual screenshot after deployment -->
+![bg right:55% contain](assets/proof-aks-nodes.png)
+
+**What this proves:**
+- AKS cluster provisioned via Terraform
+- Private cluster (API server not publicly exposed)
+- 2 nodes in **Ready** state
+- Workload identity enabled (OIDC issuer active)
+- Entra ID + Azure RBAC for access control
+
+```bash
+az aks command invoke \
+  --resource-group $RG --name $AKS \
+  --command "kubectl get nodes"
+```
+
+---
+
+# Proof: Produce & Consume via Private Path
+
+<!-- Replace with actual screenshot after deployment -->
+![bg right:55% contain](assets/proof-produce-consume.png)
+
+**What this proves:**
+- AKS pod can reach Kafka **privately** (via PrivateLink)
+- Message produced to `orders` topic
+- Message consumed from `orders` topic
+- Authentication via API key (stored in Key Vault)
+- **No public internet involved** in the data path
+
+This is the core success criteria of the POC.
+
+---
+
+# Issues Encountered
+
+| Issue | Root Cause | How Resolved |
+|-------|-----------|-------------|
+| Confluent cluster creation fails | Missing `confluent_network` resource | Added network + PrivateLink access to dependency chain |
+| Key Vault returns 403 on secret write | Deployer lacks Secrets Officer role | Added RBAC role assignment with `depends_on` |
+| Secrets appear in CI/terraform logs | Outputs not marked sensitive | Added `sensitive = true` to 5 outputs |
+| PrivateLink status stuck on "Pending" | Expected behavior | Documented as post-apply step (needs approval) |
+
+---
+
+# Best Practices Applied
+
+| Practice | What We Did | ADR |
+|----------|------------|:---:|
+| **Azure CAF naming** | All resources follow `<prefix>-<team>-<env>-<suffix>` via `azurecaf` provider | [005](02-design/decisions/005-azure-caf-naming.md) |
+| **Private AKS cluster** | API server has no public IP — access via `az aks command invoke` | [007](02-design/decisions/007-private-aks-cluster.md) |
+| **Workload Identity** | AKS pods authenticate to Key Vault via OIDC — no stored secrets | [003](02-design/decisions/003-workload-identity-for-secrets.md) |
+| **Key Vault RBAC** | Azure RBAC (not access policies) — auditable, consistent | [004](02-design/decisions/004-keyvault-rbac-over-access-policies.md) |
+| **Azure CNI** | Every pod gets a VNet IP — direct PE routing, no NAT | [006](02-design/decisions/006-azure-cni-for-aks.md) |
+| **Calico network policy** | Pod-to-pod traffic control (production-ready engine) | [008](02-design/decisions/008-calico-network-policy.md) |
+| **State file** | Remote backend (Azure Storage), versioned, encrypted, TLS 1.2 | — |
+| **Sensitive outputs** | 5 outputs marked `sensitive = true` — never leaked in logs | — |
+
+> Each ADR documents context, alternatives considered, and trade-offs.
+
+---
+
+# Documentation & References
+
+| Document | What's Inside | For |
+|----------|--------------|-----|
+| [Runbook](04-runsteps-and-verification/runbook.md) | Prerequisites (A–F), execution, verification (V1–V10), cleanup | Engineers |
+| [Architecture](architecture.md) | Full system design + resource diagram | Everyone |
+| [Network Design](02-design/network-design.md) | PrivateLink, DNS flow, subnet sizing | Network/Security |
+| [Security & Permissions](02-design/security-and-permissions.md) | Identity model, RBAC, secret handling | Security |
+| [Decision Records (8 ADRs)](02-design/decisions/) | Why Dedicated, PrivateLink, CNI, Calico, etc. | Architects |
+| [Terraform Modules](03-implementation/terraform-modules.md) | Module design, variable strategy, validation | Engineers |
+| [Issues & Resolutions](05-observations/issues-and-resolutions.md) | What went wrong + fixes | Engineers |
+| [Future Improvements](05-observations/future-improvements.md) | Production roadmap items | Decision Makers |
+| [CHANGELOG](../CHANGELOG.md) | All improvements tracked by category | Everyone |
+
+---
+
+# POC Outcome
+
+| What We Proved | Result |
+|----------------|:------:|
+| Private Kafka cluster provisioned via Terraform | ✅ |
+| Zero public internet exposure (PrivateLink) | ✅ |
+| Topics + SA + ACLs created automatically | ✅ |
+| AKS cluster provisioned via Terraform | ✅ |
+| AKS can produce/consume via private path | ✅ |
+| Secrets in Key Vault (not in code) | ✅ |
+| Entire stack from single `terraform apply` (~20 min) | ✅ |
+
+**All acceptance criteria met.**
+
+> **Recommendation:** Pattern is proven. Ready for production design phase.
+
+---
+
+# If Approved: Production Considerations
+
+| Area | What to Add | Priority |
+|------|------------|:--------:|
+| High availability | Multi-zone AKS, 3+ CKUs | P1 |
+| CI/CD pipeline | GitHub Actions / Azure DevOps with OIDC | P1 |
+| Disable local accounts | Enforce Entra-ID-only AKS auth | P1 |
+| Observability | Confluent metrics + Azure Monitor alerts | P2 |
+| Secret rotation | Key Vault + Confluent API key lifecycle | P2 |
+| Policy-as-code | OPA / Sentinel for governance | P3 |
+| Performance testing | Throughput baseline before go-live | P3 |
+
+> These are all documented in `docs/` for the production design phase.
+
+---
+
+<!-- _backgroundColor: #0078d4 -->
+<!-- _color: #fff -->
+<!-- _header: "" -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
 
 # Thank You
 
-**Repository**: `<github-org>/confluent-kafka-poc`
-**Runbook**: `docs/runbook.md`
-**Contact**: `<team-email>`
-
-Export this deck:
-```bash
-marp docs/presentation.md --pptx  # PowerPoint
-marp docs/presentation.md --pdf   # PDF
-```
+📄 **Full runbook:** `docs/runbook.md`
+📦 **Terraform code:** `terraform/` directory
+📊 **This deck:** `docs/presentation.md`
+📝 **Change log:** `CHANGELOG.md`

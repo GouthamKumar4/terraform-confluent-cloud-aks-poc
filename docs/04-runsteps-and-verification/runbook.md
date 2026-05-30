@@ -402,12 +402,12 @@ az role assignment list \
 | Roles | `Contributor` + `Role Based Access Control Administrator` |
 
 **Actual output:**
-```
-(paste here)
-```
+
+![alt text](image.png)
+![alt text](image-1.png)
 
 <!-- SCREENSHOT: docs/assets/v0-bootstrap-resources.png -->
-
+![alt text](image-2.png)
 > **Portal:** Open `rg-tfstate-unpr-poc-001` → screenshot showing Storage Account + Managed Identity.
 
 ---
@@ -448,10 +448,13 @@ az network private-endpoint list \
 
 **Actual output:**
 ```
-(paste here)
+Name
+------------------------------
+
+vnet-unpr-poc-001-confluent-pe Approved
 ```
 
-<!-- SCREENSHOT: docs/assets/v2-private-endpoint.png -->
+![alt text](image-3.png)
 
 ---
 

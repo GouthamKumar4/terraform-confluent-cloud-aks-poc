@@ -6,6 +6,8 @@
 
 ## Context
 
+![alt text](aks-provisioning.png)
+
 AKS API server can be configured in three modes:
 
 | Mode | API Server Access | Management Access |
