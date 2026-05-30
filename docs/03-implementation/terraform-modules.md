@@ -74,8 +74,6 @@ Terraform resolves dependencies automatically, but the logical order is:
 | `cku_count` | number | Dedicated cluster units (default: 1) |
 | `azure_subscription_id` | string | Your subscription — allowed through PrivateLink |
 | `service_account_name` | string | SA display name |
-| `consumer_group_prefix` | string | ACL prefix for consumer groups |
-| `topics` | list(object) | Topic definitions: name, partitions, config |
 
 ### Key Outputs
 
@@ -88,8 +86,6 @@ Terraform resolves dependencies automatically, but the logical order is:
 | `api_key_secret` | **Yes** | API key secret value |
 | `private_link_service_aliases` | No | Map of zone → PLS alias (consumed by networking) |
 | `confluent_dns_domain` | No | DNS domain for private DNS zone |
-| `topic_names` | No | List of created topic names |
-
 ---
 
 ## Module: `networking`
