@@ -69,7 +69,7 @@ style: |
 # Architecture Overview
 
 <!-- Replace with your diagram: docs/assets/architecture-overview.png -->
-![bg right:55% contain](assets/architecture-overview.png)
+![bg right:55% contain](assets/architecture-hero.png)
 
 **Single `terraform apply` creates:**
 
@@ -137,8 +137,6 @@ AKS Pod
 | 4 | Cluster | Dedicated, 1 CKU |
 | 5 | Service Account | Application identity |
 | 6 | API Key | Cluster-scoped credentials |
-| 7 | Topics | `orders`, `payments` (3 partitions each) |
-| 8 | ACLs | Produce + consume + consumer group |
 
 ---
 
@@ -177,9 +175,6 @@ AKS Pod
 | **Network policy** | Calico |
 | **Workload Identity** | OIDC issuer enabled |
 | **Auto-upgrade** | Patch channel |
-| **Image Cleaner** | Every 48h |
-| **Monitoring** | Container Insights → Log Analytics |
-| **Access** | `az aks command invoke` (ARM tunnel) |
 
 ---
 
@@ -220,7 +215,7 @@ az aks command invoke \
   --command "kubectl get nodes"
 ```
 
-**Deploy time: ~20-30 minutes** (Dedicated cluster takes longest)
+**Deploy time: ~1hr to 2hr** (Dedicated cluster takes longest)
 
 ---
 
@@ -283,28 +278,13 @@ az aks command invoke \
 # Proof: Produce & Consume via Private Path
 
 <!-- Replace with actual screenshot after deployment -->
-![bg right:55% contain](assets/proof-produce-consume.png)
+![bg right:55% contain](assets/proof-of-connectivity.png)
 
 **What this proves:**
 - AKS pod can reach Kafka **privately** (via PrivateLink)
-- Message produced to `orders` topic
-- Message consumed from `orders` topic
-- Authentication via API key (stored in Key Vault)
 - **No public internet involved** in the data path
 
 This is the core success criteria of the POC.
-
----
-
-# Issues Encountered
-
-| Issue | Root Cause | How Resolved |
-|-------|-----------|-------------|
-| Confluent cluster creation fails | Missing `confluent_network` resource | Added network + PrivateLink access to dependency chain |
-| Key Vault returns 403 on secret write | Deployer lacks Secrets Officer role | Added RBAC role assignment with `depends_on` |
-| Secrets appear in CI/terraform logs | Outputs not marked sensitive | Added `sensitive = true` to 5 outputs |
-| PrivateLink status stuck on "Pending" | Expected behavior | Documented as post-apply step (needs approval) |
-
 ---
 
 # Best Practices Applied
@@ -321,24 +301,6 @@ This is the core success criteria of the POC.
 | **Sensitive outputs** | 5 outputs marked `sensitive = true` — never leaked in logs | — |
 
 > Each ADR documents context, alternatives considered, and trade-offs.
-
----
-
-# Documentation & References
-
-| Document | What's Inside | For |
-|----------|--------------|-----|
-| [Runbook](04-runsteps-and-verification/runbook.md) | Prerequisites (A–F), execution, verification (V1–V10), cleanup | Engineers |
-| [Architecture](architecture.md) | Full system design + resource diagram | Everyone |
-| [Network Design](02-design/network-design.md) | PrivateLink, DNS flow, subnet sizing | Network/Security |
-| [Security & Permissions](02-design/security-and-permissions.md) | Identity model, RBAC, secret handling | Security |
-| [Decision Records (8 ADRs)](02-design/decisions/) | Why Dedicated, PrivateLink, CNI, Calico, etc. | Architects |
-| [Terraform Modules](03-implementation/terraform-modules.md) | Module design, variable strategy, validation | Engineers |
-| [Issues & Resolutions](05-observations/issues-and-resolutions.md) | What went wrong + fixes | Engineers |
-| [Future Improvements](05-observations/future-improvements.md) | Production roadmap items | Decision Makers |
-| [CHANGELOG](../CHANGELOG.md) | All improvements tracked by category | Everyone |
-
----
 
 # POC Outcome
 
@@ -398,4 +360,3 @@ This is the core success criteria of the POC.
 | 14 | [Resource Details](03-implementation/resource-details.md) | All provisioned resources |
 | 15 | [Issues & Resolutions](05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
 | 16 | [Future Improvements](05-observations/future-improvements.md) | Production roadmap |
-| 17 | [CHANGELOG](../CHANGELOG.md) | All changes by category |
