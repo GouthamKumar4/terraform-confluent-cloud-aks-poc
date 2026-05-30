@@ -62,10 +62,7 @@ Terraform resolves dependencies automatically, but the logical order is:
 | 4 | `confluent_kafka_cluster.this` | Cluster | Dedicated, single-zone, N CKUs |
 | 5 | `confluent_service_account.app` | Service Account | Application identity |
 | 6 | `confluent_api_key.app` | API Key | Cluster-scoped credentials for the SA |
-| 7 | `confluent_kafka_topic.topics` | Topics | `for_each` over `var.topics` |
-| 8 | `confluent_kafka_acl.producer` | ACLs | WRITE per topic (LITERAL) |
-| 9 | `confluent_kafka_acl.consumer` | ACLs | READ per topic (LITERAL) |
-| 10 | `confluent_kafka_acl.consumer_group` | ACL | READ on consumer group (PREFIXED) |
+
 
 ### Key Inputs
 
