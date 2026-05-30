@@ -137,7 +137,7 @@ variable "node_os_upgrade_channel" {
 variable "os_disk_type" {
   description = "OS disk type for node pools: Managed or Ephemeral"
   type        = string
-  default     = "Ephemeral"
+  default     = "Managed"
 
   validation {
     condition     = contains(["Managed", "Ephemeral"], var.os_disk_type)

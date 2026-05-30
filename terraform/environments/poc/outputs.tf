@@ -43,3 +43,14 @@ output "keyvault_secret_uris" {
   value       = module.keyvault.secret_uris
   sensitive   = true
 }
+
+# --- Deployer Identity (bootstrap reference) ---
+output "deployer_identity_name" {
+  description = "Managed Identity name used for Terraform deployments"
+  value       = data.azurerm_user_assigned_identity.deployer.name
+}
+
+output "deployer_identity_client_id" {
+  description = "Managed Identity client ID (ARM_CLIENT_ID for CI/CD)"
+  value       = data.azurerm_user_assigned_identity.deployer.client_id
+}

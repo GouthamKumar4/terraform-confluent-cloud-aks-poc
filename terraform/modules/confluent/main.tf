@@ -22,15 +22,9 @@ resource "confluent_network" "this" {
   region           = var.confluent_region
   connection_types = ["PRIVATELINK"]
 
-  azure {
-    subscription = var.azure_subscription_id
-  }
-
   environment {
     id = confluent_environment.this.id
   }
-
-  zones = var.confluent_availability_zones
 }
 
 # Private Link Access — grants YOUR Azure subscription permission to connect

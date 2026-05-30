@@ -5,6 +5,7 @@
 #   TF_VAR_azure_subscription_id
 
 # --- Naming ---
+team_name         = "unpr"
 environment_short = "poc"
 unique_suffix     = "001"
 
@@ -21,12 +22,12 @@ topics = [
 ]
 
 # --- Networking ---
-vnet_address_space = ["10.0.0.0/16"]
-pe_subnet_prefix   = "10.0.1.0/24"
-aks_subnet_prefix  = "10.0.4.0/22"
+vnet_address_space = ["10.0.0.0/22"]
+pe_subnet_prefix   = "10.0.0.0/26"
+aks_subnet_prefix  = "10.0.1.0/24"
 
 # --- AKS ---
-kubernetes_version = "1.29"
+kubernetes_version = "1.35"
 aks_node_count     = 2
 aks_vm_size        = "Standard_D2s_v5"
 

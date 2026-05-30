@@ -1,4 +1,15 @@
 # --- General ---
+variable "team_name" {
+  description = "Team name used in resource naming (e.g., unpr, payments, core)"
+  type        = string
+  default     = "unpr"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9]{1,9}$", var.team_name))
+    error_message = "team_name must be 2-10 lowercase alphanumeric characters."
+  }
+}
+
 variable "environment_short" {
   description = "Short environment name used in naming convention (e.g., poc, dev, stg, prd)"
   type        = string
@@ -137,7 +148,7 @@ variable "topics" {
 variable "vnet_address_space" {
   description = "VNet address space"
   type        = list(string)
-  default     = ["10.0.0.0/16"]
+  default     = ["10.0.0.0/22"]
 
   validation {
     condition     = length(var.vnet_address_space) > 0
@@ -153,7 +164,7 @@ variable "vnet_address_space" {
 variable "pe_subnet_prefix" {
   description = "Private endpoint subnet CIDR"
   type        = string
-  default     = "10.0.1.0/24"
+  default     = "10.0.0.0/26"
 
   validation {
     condition     = can(cidrhost(var.pe_subnet_prefix, 0))
@@ -164,7 +175,7 @@ variable "pe_subnet_prefix" {
 variable "aks_subnet_prefix" {
   description = "AKS subnet CIDR"
   type        = string
-  default     = "10.0.4.0/22"
+  default     = "10.0.1.0/24"
 
   validation {
     condition     = can(cidrhost(var.aks_subnet_prefix, 0))

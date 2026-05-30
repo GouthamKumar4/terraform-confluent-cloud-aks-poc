@@ -14,9 +14,9 @@ variable "resource_group_name" {
 }
 
 variable "reader_principal_ids" {
-  description = "List of principal/object IDs that need Key Vault Secrets User role (e.g., AKS identity)"
-  type        = list(string)
-  default     = []
+  description = "Map of identity name to principal/object ID that need Key Vault Secrets User role (e.g., AKS identity)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "secrets" {

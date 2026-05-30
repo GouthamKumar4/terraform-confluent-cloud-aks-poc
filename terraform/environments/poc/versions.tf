@@ -8,7 +8,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.0"
+      version = "~> 4.74"
     }
     azurecaf = {
       source  = "aztfmod/azurecaf"
@@ -16,7 +16,7 @@ terraform {
     }
     confluent = {
       source  = "confluentinc/confluent"
-      version = "~> 2.0"
+      version = "~> 2.73"
     }
   }
 }

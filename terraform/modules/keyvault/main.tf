@@ -14,7 +14,7 @@ resource "azurerm_key_vault" "this" {
   purge_protection_enabled   = true
   soft_delete_retention_days = 7
 
-  enable_rbac_authorization = true
+  rbac_authorization_enabled = true
 
   network_acls {
     default_action = "Deny"
@@ -34,7 +34,7 @@ resource "azurerm_role_assignment" "deployer_secrets_officer" {
 
 # RBAC: Additional identities that need read access (e.g., AKS)
 resource "azurerm_role_assignment" "secrets_user" {
-  for_each = toset(var.reader_principal_ids)
+  for_each = var.reader_principal_ids
 
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets User"
@@ -43,10 +43,10 @@ resource "azurerm_role_assignment" "secrets_user" {
 
 # Optional: Store secrets if provided (generic map — not tied to any service)
 resource "azurerm_key_vault_secret" "this" {
-  for_each = var.secrets
+  for_each = nonsensitive(toset(keys(var.secrets)))
 
-  name         = each.key
-  value        = each.value
+  name         = each.value
+  value        = var.secrets[each.value]
   key_vault_id = azurerm_key_vault.this.id
 
   depends_on = [azurerm_role_assignment.deployer_secrets_officer]

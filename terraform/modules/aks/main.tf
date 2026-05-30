@@ -11,7 +11,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   kubernetes_version  = var.kubernetes_version
   sku_tier            = var.sku_tier
 
-  # Auto-patch security fixes (only z-version bumps e.g., 1.29.1 → 1.29.2)
+  # Auto-patch security fixes (only z-version bumps e.g., 1.35.1 → 1.35.2)
   automatic_upgrade_channel = var.automatic_upgrade_channel
 
   # Auto-patch node OS security vulnerabilities (kernel, packages)

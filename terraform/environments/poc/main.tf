@@ -1,8 +1,22 @@
 ###############################################################################
 # POC Environment — Root Module
 # Composes: Confluent, Networking, AKS, Key Vault modules
-# Naming: uses local.names from locals.tf
+# Naming: uses local.names from locals.tf (format: <prefix>-<team>-<env>-<suffix>)
+#
+# Authentication:
+#   Azure:     Managed Identity (id-terraform-unpr-poc-001) + OIDC federation
+#              → ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_USE_OIDC=true
+#              → No ARM_CLIENT_SECRET needed
+#   Confluent: Cloud API key/secret via TF_VAR_* env vars
 ###############################################################################
+
+# --- Deployer Identity (created manually in Runbook Step B) ---
+# This data source references the pre-existing Managed Identity used by Terraform.
+# It is NOT created by Terraform — it exists in the bootstrap resource group.
+data "azurerm_user_assigned_identity" "deployer" {
+  name                = "id-terraform-${var.team_name}-${var.environment_short}-${var.unique_suffix}"
+  resource_group_name = "rg-tfstate-${var.team_name}-${var.environment_short}-${var.unique_suffix}"
+}
 
 # Resource Group
 resource "azurerm_resource_group" "this" {
@@ -87,7 +101,9 @@ module "keyvault" {
   allowed_ip_ranges   = var.keyvault_allowed_ips
 
   # Grant AKS identity read access to secrets
-  reader_principal_ids = [module.aks.kubelet_identity_object_id]
+  reader_principal_ids = {
+    "aks-kubelet" = module.aks.kubelet_identity_object_id
+  }
 
   # Push Confluent secrets from HERE (root module), not inside KV module
   secrets = {
