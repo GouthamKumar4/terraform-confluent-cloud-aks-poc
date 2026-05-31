@@ -1,0 +1,46 @@
+name: Terraform Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'apply' to confirm deployment"
+        required: true
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_USE_OIDC: true
+  TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+  TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+  TF_VAR_azure_subscription_id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+jobs:
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'apply'
+    defaults:
+      run:
+        working-directory: terraform/environments/poc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -var-file=poc.tfvars -auto-approve
