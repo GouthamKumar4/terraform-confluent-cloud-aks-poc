@@ -17,16 +17,16 @@ locals {
 
   # Define all Azure resources that need CAF naming
   azure_resource_names = {
-    rg       = { resource_type = "azurerm_resource_group",           name = local.team_env }
-    vnet     = { resource_type = "azurerm_virtual_network",          name = local.team_env }
-    snet_pe  = { resource_type = "azurerm_subnet",                   name = "${local.team_env}-pe" }
-    snet_aks = { resource_type = "azurerm_subnet",                   name = "${local.team_env}-aks" }
-    nsg_pe   = { resource_type = "azurerm_network_security_group",   name = "${local.team_env}-pe" }
-    nsg_aks  = { resource_type = "azurerm_network_security_group",   name = "${local.team_env}-aks" }
-    pe       = { resource_type = "azurerm_private_endpoint",         name = local.team_env }
-    aks      = { resource_type = "azurerm_kubernetes_cluster",       name = local.team_env }
-    kv       = { resource_type = "azurerm_key_vault",                name = local.team_env }
-    law      = { resource_type = "azurerm_log_analytics_workspace",  name = local.team_env }
+    rg       = { resource_type = "azurerm_resource_group", name = local.team_env }
+    vnet     = { resource_type = "azurerm_virtual_network", name = local.team_env }
+    snet_pe  = { resource_type = "azurerm_subnet", name = "${local.team_env}-pe" }
+    snet_aks = { resource_type = "azurerm_subnet", name = "${local.team_env}-aks" }
+    nsg_pe   = { resource_type = "azurerm_network_security_group", name = "${local.team_env}-pe" }
+    nsg_aks  = { resource_type = "azurerm_network_security_group", name = "${local.team_env}-aks" }
+    pe       = { resource_type = "azurerm_private_endpoint", name = local.team_env }
+    aks      = { resource_type = "azurerm_kubernetes_cluster", name = local.team_env }
+    kv       = { resource_type = "azurerm_key_vault", name = local.team_env }
+    law      = { resource_type = "azurerm_log_analytics_workspace", name = local.team_env }
   }
 }
 

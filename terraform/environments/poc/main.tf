@@ -62,8 +62,8 @@ module "networking" {
 
   # From Confluent's network — their PL service aliases for your PE to connect to
   confluent_private_link_service_aliases = module.confluent.private_link_service_aliases
-  confluent_dns_zone_name               = module.confluent.confluent_dns_domain
-  confluent_dns_record_name             = local.names.confluent_cluster
+  confluent_dns_zone_name                = module.confluent.confluent_dns_domain
+  confluent_dns_record_name              = "*"
 
   tags = local.common_tags
 }
@@ -83,7 +83,7 @@ module "aks" {
   service_cidr        = var.aks_service_cidr
   dns_service_ip      = var.aks_dns_service_ip
 
-  log_analytics_workspace_id        = azurerm_log_analytics_workspace.this.id
+  log_analytics_workspace_id      = azurerm_log_analytics_workspace.this.id
   api_server_authorized_ip_ranges = var.aks_authorized_ip_ranges
   private_cluster_enabled         = var.aks_private_cluster_enabled
   admin_group_object_ids          = var.aks_admin_group_object_ids
@@ -107,9 +107,9 @@ module "keyvault" {
 
   # Push Confluent secrets from HERE (root module), not inside KV module
   secrets = {
-    "confluent-api-key-id"       = module.confluent.api_key_id
-    "confluent-api-key-secret"   = module.confluent.api_key_secret
-    "kafka-bootstrap-endpoint"   = module.confluent.cluster_bootstrap_endpoint
+    "confluent-api-key-id"     = module.confluent.api_key_id
+    "confluent-api-key-secret" = module.confluent.api_key_secret
+    "kafka-bootstrap-endpoint" = module.confluent.cluster_bootstrap_endpoint
   }
 
   tags = local.common_tags

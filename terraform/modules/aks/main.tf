@@ -61,10 +61,10 @@ resource "azurerm_kubernetes_cluster" "this" {
   local_account_disabled = var.local_account_disabled
 
   network_profile {
-    network_plugin    = "azure"
-    network_policy    = "calico"
-    service_cidr      = var.service_cidr
-    dns_service_ip    = var.dns_service_ip
+    network_plugin = "azure"
+    network_policy = "calico"
+    service_cidr   = var.service_cidr
+    dns_service_ip = var.dns_service_ip
   }
 
   oms_agent {
