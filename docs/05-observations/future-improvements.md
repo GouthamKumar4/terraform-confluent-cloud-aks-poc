@@ -19,7 +19,6 @@
 | 9 | Cost optimization (CKU right-sizing) | Cost | Low | 🟡 Low | P3 |
 
 ---
-![alt text](image.png)
 ## Improvement Details
 
 ### 1. ~~OIDC for CI/CD Authentication~~ — ✅ Implemented
