@@ -93,6 +93,34 @@ resource "confluent_api_key" "app" {
   }
 }
 
+# Role bindings — grants the service account DeveloperRead + DeveloperWrite
+# scoped to each topic, satisfying "ACLs tying the key to produce/consume rights".
+# Uses the Confluent Cloud management API (public), NOT the Kafka REST API,
+# so it works regardless of PrivateLink restrictions.
+
+resource "confluent_role_binding" "app_developer_read" {
+  for_each = { for t in var.topics : t.name => t }
+
+  principal   = "User:${confluent_service_account.app.id}"
+  role_name   = "DeveloperRead"
+  crn_pattern = "${confluent_kafka_cluster.this.rbac_crn}/kafka=${confluent_kafka_cluster.this.id}/topic=${each.key}"
+}
+
+resource "confluent_role_binding" "app_developer_write" {
+  for_each = { for t in var.topics : t.name => t }
+
+  principal   = "User:${confluent_service_account.app.id}"
+  role_name   = "DeveloperWrite"
+  crn_pattern = "${confluent_kafka_cluster.this.rbac_crn}/kafka=${confluent_kafka_cluster.this.id}/topic=${each.key}"
+}
+
+# Consumer group access — required for consumers to join groups with the configured prefix
+resource "confluent_role_binding" "app_developer_read_group" {
+  principal   = "User:${confluent_service_account.app.id}"
+  role_name   = "DeveloperRead"
+  crn_pattern = "${confluent_kafka_cluster.this.rbac_crn}/kafka=${confluent_kafka_cluster.this.id}/group=${var.consumer_group_prefix}*"
+}
+
 ###############################################################################
 # Topics and ACLs
 # NOTE: These resources use the Kafka REST API (data plane), which is only
