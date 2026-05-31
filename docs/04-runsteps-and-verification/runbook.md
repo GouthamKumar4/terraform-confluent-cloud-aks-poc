@@ -15,7 +15,7 @@
 | | [Step 4](#step-4-apply) | `terraform apply` |
 | | [Step 5](#step-5-accept-private-link-connection-if-manual) | Accept Private Link connection |
 | **Verification** | [V0](#v0-bootstrap-resources) | Bootstrap: RG, Storage, MI, RBAC |
-| | [V1–V8](#v1-confluent-resources) | Confluent, Networking, AKS, Key Vault, End-to-end |
+| | [V1–V9](#v1-confluent-resources) | Confluent, Networking, AKS, Key Vault, End-to-end |
 | **Cleanup** | [Cleanup](#cleanup) | `terraform destroy` |
 
 ---
@@ -340,81 +340,140 @@ Expected: All resources created. Note outputs.
 In some setups, the Private Link connection needs approval on the Confluent side:
 - Check Confluent Console → Networking → Private Link
 - Or wait for auto-approval if configured
-### Step 6: Create Kafka Topics & ACLs (from Private Network)
+### Step 6: Create Kafka Topics (from Private Network)
 
-> **Why not via Terraform?** The Confluent Kafka REST API (used for topics/ACLs) is a **data-plane** operation that goes through the PrivateLink endpoint. This endpoint is only reachable from inside the VNet — not from your local machine. This is [by design](https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/dedicated-privatelink-azure-kafka-acls) per Confluent's official guidance.
+> **Why not via Terraform?** The Confluent Kafka REST API (used by `confluent_kafka_topic`) is a **data-plane** operation that goes through the PrivateLink endpoint. This endpoint is only reachable from inside the VNet — not from your local machine or CI runner. This is [by design](https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/dedicated-privatelink-azure-kafka-acls) per Confluent's official guidance.
+>
+> **Role bindings (ACLs) ARE created via Terraform** — they use the Cloud management API (public), not the Kafka REST API.
 >
 > **Options for topic creation:**
 > | Method | Works from local machine? | Recommended for |
 > |--------|---------------------------|------------------|
 > | AKS pod with kafka-topics CLI | No (runs inside VNet via `az aks command invoke`) | POC, automation |
-> | Confluent Cloud UI (Resource Metadata Access enabled) | Yes (read-only view) | Viewing only — cannot create/edit/delete |
-> | NGINX/HAProxy in VNet | Yes (via proxy) | Production |
-> | Second Terraform run from VM in VNet | No (requires VNet compute) | CI/CD pipelines |
+> | Confluent Cloud UI | Yes (if Resource Metadata Access enabled) | Viewing only |
+> | CI/CD from VNet runner | No (requires VNet compute) | Production |
 
+#### 6.1 Set Variables
 ```bash
-# Get credentials from Key Vault
+RG_NAME=$(terraform output -raw resource_group_name)
+AKS_NAME=$(terraform output -raw aks_cluster_name)
 API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-id --query value -o tsv)
 API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-secret --query value -o tsv)
 BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name kafka-bootstrap-endpoint --query value -o tsv)
+```
 
-# Deploy Kafka tools pod in AKS
+#### 6.2 Deploy Kafka Tools Pod
+```bash
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
-  --command "kubectl run kafka-setup --image=confluentinc/cp-kafka:7.5.0 --restart=Never --command -- sleep 600"
+  --command "kubectl run kafka-setup --image=confluentinc/cp-kafka:7.6.0 --restart=Never --command -- sleep 3600"
 
-# Wait for pod
+# Wait for pod to be ready
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
   --command "kubectl wait --for=condition=Ready pod/kafka-setup --timeout=120s"
 ```
 
-#### Create Topics
+#### 6.3 Create Topics
 ```bash
-# Create client config inside the pod
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
-  --command "kubectl exec kafka-setup -- bash -c 'cat > /tmp/client.properties << EOF
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
 security.protocol=SASL_SSL
 sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"$API_KEY_ID\" password=\"$API_KEY_SECRET\";
-EOF'"
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
+EOF
 
-# Create topic: orders
-az aks command invoke \
-  --resource-group "$RG_NAME" \
-  --name "$AKS_NAME" \
-  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --create --topic orders --partitions 6"
+echo \"--- Creating orders topic ---\"
+kafka-topics --create --topic orders --partitions 3 --replication-factor 3 \
+  --if-not-exists --command-config /tmp/client.properties \
+  --bootstrap-server ${BOOTSTRAP}
 
-# Create topic: payments
-az aks command invoke \
-  --resource-group "$RG_NAME" \
-  --name "$AKS_NAME" \
-  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --create --topic payments --partitions 6"
+echo \"--- Creating payments topic ---\"
+kafka-topics --create --topic payments --partitions 3 --replication-factor 3 \
+  --if-not-exists --command-config /tmp/client.properties \
+  --bootstrap-server ${BOOTSTRAP}
 
-# List topics (verify)
-az aks command invoke \
-  --resource-group "$RG_NAME" \
-  --name "$AKS_NAME" \
-  --command "kubectl exec kafka-setup -- kafka-topics --bootstrap-server $BOOTSTRAP:9092 --command-config /tmp/client.properties --list"
+echo \"--- Listing topics ---\"
+kafka-topics --list --command-config /tmp/client.properties \
+  --bootstrap-server ${BOOTSTRAP}
+'"
 ```
 
-#### Create ACLs
+**Expected:**
+```
+--- Creating orders topic ---
+Created topic orders.
+--- Creating payments topic ---
+Created topic payments.
+--- Listing topics ---
+orders
+payments
+```
 
-> ACLs are automatically granted because the API key is owned by the service account that has `ResourceOwner` on the cluster. If using granular ACLs, create them via the Confluent Cloud UI or run `kafka-acls` from the pod.
-
-#### Cleanup setup pod
+#### 6.4 Verify Produce & Consume
 ```bash
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
-  --command "kubectl delete pod kafka-setup --force --grace-period=0"
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
+EOF
+
+echo \"--- Producing 3 test messages to orders ---\"
+echo -e \"test-message-1\ntest-message-2\ntest-message-3\" | \
+  kafka-console-producer --topic orders \
+  --bootstrap-server ${BOOTSTRAP} \
+  --producer.config /tmp/client.properties 2>&1
+echo \"Producer exit: \$?\"
+
+echo \"--- Consuming from orders ---\"
+timeout 15 kafka-console-consumer --topic orders \
+  --from-beginning --max-messages 3 \
+  --bootstrap-server ${BOOTSTRAP} \
+  --consumer.config /tmp/client.properties \
+  --group poc-verify 2>&1
+echo \"Consumer exit: \$?\"
+'"
 ```
 
-Expected: Topics `orders` and `payments` created, visible in `--list` output.
+**Expected:**
+```
+--- Producing 3 test messages to orders ---
+Producer exit: 0
+--- Consuming from orders ---
+test-message-1
+test-message-2
+test-message-3
+Processed a total of 3 messages
+Consumer exit: 0
+```
+
+#### 6.5 Cleanup Setup Pod
+```bash
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl delete pod kafka-setup --ignore-not-found"
+```
+
+#### ACLs / Role Bindings
+
+> **Already created by Terraform** (Step 4). The service account `sa-app-unpr-poc-001` has:
+> - `DeveloperRead` on topics `orders` and `payments` (consume)
+> - `DeveloperWrite` on topics `orders` and `payments` (produce)
+> - `DeveloperRead` on consumer groups prefixed with `poc-`
+>
+> These use the Confluent Cloud RBAC management API (public endpoint), so Terraform creates them directly — no PrivateLink needed.
 
 ---
 
@@ -431,15 +490,16 @@ Expected: Topics `orders` and `payments` created, visible in `--list` output.
 
 | # | Test | Category | Expected | Actual | Status |
 |---|------|----------|----------|--------|:------:|
-| V0 | Bootstrap resources exist | Bootstrap | RG, Storage, MI, RBAC | | ⬜ |
-| V1 | Confluent environment + cluster + topics | Confluent | IDs returned | | ⬜ |
-| V2 | Private Endpoint connected | Networking | Status = Approved | | ⬜ |
-| V3 | DNS resolves to private IP | Networking | FQDN → 10.0.1.x | | ⬜ |
-| V4 | AKS cluster ready | AKS | Nodes in Ready state | | ⬜ |
-| V5 | Key Vault secrets present | Key Vault | 3 secrets listed | | ⬜ |
-| V6 | Produce message | End-to-end | Message sent | | ⬜ |
-| V7 | Consume message | End-to-end | Message received | | ⬜ |
-| V8 | Unauthorized access denied | Security | Auth error | | ⬜ |
+| V0 | Bootstrap resources exist | Bootstrap | RG, Storage, MI, RBAC | | ✅ |
+| V1 | Confluent environment + cluster + topics | Confluent | IDs returned | | ✅ |
+| V2 | Private Endpoint connected | Networking | Status = Approved | | ✅ |
+| V3 | DNS resolves to private IP | Networking | FQDN → 10.0.1.x | | ✅ |
+| V4 | AKS cluster ready | AKS | Nodes in Ready state | | ✅ |
+| V5 | Key Vault secrets present | Key Vault | 3 secrets listed | | ✅ |
+| V6 | List & describe topics | Kafka | orders, payments listed | | ✅ |
+| V7 | Produce message | End-to-end | Message sent | | ✅ |
+| V8 | Consume message | End-to-end | Message received | | ✅ |
+| V9 | Unauthorized access denied | Security | Auth error | | ✅ |
 
 ---
 
@@ -586,6 +646,141 @@ az aks command invoke \
 
 ![alt text](image-8.png)
 
+---
+
+### V6: List & Describe Topics
+
+**Command:**
+```bash
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
+EOF
+echo \"--- Listing topics ---\"
+kafka-topics --list --command-config /tmp/client.properties --bootstrap-server ${BOOTSTRAP}
+echo \"--- Describing orders ---\"
+kafka-topics --describe --topic orders --command-config /tmp/client.properties --bootstrap-server ${BOOTSTRAP}
+echo \"--- Describing payments ---\"
+kafka-topics --describe --topic payments --command-config /tmp/client.properties --bootstrap-server ${BOOTSTRAP}
+'"
+```
+
+**Expected:**
+```
+--- Listing topics ---
+orders
+payments
+--- Describing orders ---
+Topic: orders   PartitionCount: 3   ReplicationFactor: 3   ...
+--- Describing payments ---
+Topic: payments   PartitionCount: 3   ReplicationFactor: 3   ...
+```
+
+**Actual output:**
+
+<!-- SCREENSHOT: docs/assets/v6-list-topics.png -->
+![alt text](image-9.png)
+
+---
+
+### V7: Produce Messages
+
+**Command:**
+```bash
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
+EOF
+echo \"--- Producing messages to orders topic ---\"
+echo -e \"{\\\"orderId\\\":\\\"ORD-001\\\",\\\"team\\\":\\\"unpr\\\",\\\"product\\\":\\\"kafka-poc\\\",\\\"amount\\\":99.99}\n{\\\"orderId\\\":\\\"ORD-002\\\",\\\"team\\\":\\\"unpr\\\",\\\"product\\\":\\\"streaming-service\\\",\\\"amount\\\":149.50}\n{\\\"orderId\\\":\\\"ORD-003\\\",\\\"team\\\":\\\"unpr\\\",\\\"product\\\":\\\"event-platform\\\",\\\"amount\\\":250.00}\" | kafka-console-producer --topic orders --bootstrap-server ${BOOTSTRAP} --producer.config /tmp/client.properties 2>&1
+echo \"Producer exit code: \$?\"
+
+echo \"--- Producing messages to payments topic ---\"
+echo -e \"{\\\"paymentId\\\":\\\"PAY-001\\\",\\\"orderId\\\":\\\"ORD-001\\\",\\\"team\\\":\\\"unpr\\\",\\\"status\\\":\\\"completed\\\"}\n{\\\"paymentId\\\":\\\"PAY-002\\\",\\\"orderId\\\":\\\"ORD-002\\\",\\\"team\\\":\\\"unpr\\\",\\\"status\\\":\\\"pending\\\"}\n{\\\"paymentId\\\":\\\"PAY-003\\\",\\\"orderId\\\":\\\"ORD-003\\\",\\\"team\\\":\\\"unpr\\\",\\\"status\\\":\\\"completed\\\"}\" | kafka-console-producer --topic payments --bootstrap-server ${BOOTSTRAP} --producer.config /tmp/client.properties 2>&1
+echo \"Producer exit code: \$?\"
+'"
+```
+
+**Expected:** `Producer exit: 0` — 3 messages produced to `orders` topic
+
+**Actual output:**
+```
+--- Producing test messages ---
+Producer exit: 0
+```
+
+<!-- SCREENSHOT: docs/assets/v7-produce-messages.png -->
+![alt text](image-10.png)
+---
+
+### V8: Consume Messages
+
+**Command:**
+```bash
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
+EOF
+timeout 15 kafka-console-consumer --topic orders \
+  --from-beginning --max-messages 3 \
+  --bootstrap-server ${BOOTSTRAP} \
+  --consumer.config /tmp/client.properties \
+  --group poc-verify 2>&1
+echo \"Consumer exit: \$?\"
+'"
+```
+
+**Expected:** 3 messages consumed from `orders`, `Consumer exit: 0`
+
+**Actual output:**
+
+<!-- SCREENSHOT: docs/assets/v8-consume-messages.png -->
+![alt text](image-11.png)
+---
+
+### V9: Unauthorized Access Denied
+
+**Command:**
+```bash
+# Attempt to produce with invalid credentials — should fail with auth error
+az aks command invoke \
+  --resource-group "$RG_NAME" \
+  --name "$AKS_NAME" \
+  --command "kubectl exec kafka-setup -- bash -c '
+cat > /tmp/bad-client.properties <<EOF
+bootstrap.servers=${BOOTSTRAP}
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"INVALID\" password=\"INVALID\";
+EOF
+echo \"test\" | kafka-console-producer --topic orders \
+  --bootstrap-server ${BOOTSTRAP} \
+  --producer.config /tmp/bad-client.properties 2>&1
+'"
+```
+
+**Expected:** Authentication error (e.g., `SaslAuthenticationException`)
+
+<!-- SCREENSHOT: docs/assets/v9-unauthorized-access.png -->
+![alt text](image-12.png)
 ---
 
 ## Cleanup
