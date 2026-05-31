@@ -541,11 +541,11 @@ az role assignment list \
 
 **Actual output:**
 
-![alt text](image.png)
-![alt text](image-1.png)
+![alt text](../assets/image.png)
+![alt text](../assets/image-1.png)
 
 <!-- SCREENSHOT: docs/assets/v0-bootstrap-resources.png -->
-![alt text](image-2.png)
+![alt text](../assets/image-2.png)
 > **Portal:** Open `rg-tfstate-unpr-poc-001` → screenshot showing Storage Account + Managed Identity.
 
 ---
@@ -572,13 +572,13 @@ terraform output confluent_topic_names
 ```
 
 <!-- SCREENSHOT: docs/assets/v1-confluent-resources.png -->
-![alt text](image-4.png)
+![alt text](../assets/image-4.png)
 ---
 ### V4: AKS Cluster
 
 Check in portal AKS cluster is provisioned
-![alt text](image-5.png)
-![alt text](image-6.png)
+![alt text](../assets/image-5.png)
+![alt text](../assets/image-6.png)
 
 ### V5: Key Vault Secrets
 
@@ -598,7 +598,7 @@ kafka-bootstrap-endpoint
 
 **Actual output:**
 
-![alt text](image-7.png)
+![alt text](../assets/image-7.png)
 
 ---
 
@@ -624,7 +624,7 @@ Name
 vnet-unpr-poc-001-confluent-pe Approved
 ```
 
-![alt text](image-3.png)
+![alt text](../assets/image-3.png)
 
 ---
 
@@ -644,7 +644,7 @@ az aks command invoke \
 
 **Actual output:**
 
-![alt text](image-8.png)
+![alt text](../assets/image-8.png)
 
 ---
 
@@ -685,7 +685,7 @@ Topic: payments   PartitionCount: 3   ReplicationFactor: 3   ...
 **Actual output:**
 
 <!-- SCREENSHOT: docs/assets/v6-list-topics.png -->
-![alt text](image-9.png)
+![alt text](../assets/v6-list-topics.png)
 
 ---
 
@@ -722,7 +722,7 @@ Producer exit: 0
 ```
 
 <!-- SCREENSHOT: docs/assets/v7-produce-messages.png -->
-![alt text](image-10.png)
+![alt text](../assets/image-10.png)
 ---
 
 ### V8: Consume Messages
@@ -753,7 +753,7 @@ echo \"Consumer exit: \$?\"
 **Actual output:**
 
 <!-- SCREENSHOT: docs/assets/v8-consume-messages.png -->
-![alt text](image-11.png)
+![alt text](../assets/image-11.png)
 ---
 
 ### V9: Unauthorized Access Denied
@@ -780,7 +780,7 @@ echo \"test\" | kafka-console-producer --topic orders \
 **Expected:** Authentication error (e.g., `SaslAuthenticationException`)
 
 <!-- SCREENSHOT: docs/assets/v9-unauthorized-access.png -->
-![alt text](image-12.png)
+![alt text](../assets/image-12.png)
 ---
 
 ## Cleanup
