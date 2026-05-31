@@ -34,7 +34,7 @@ Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variable
 
 ## Workflow 1: Validate
 
-**Trigger:** Automatic on PR or push to `main` (when `terraform/**` changes)
+**Trigger:** Automatic on PR or push to `main` (when `terraform/**` changes) or Even Manual Run 
 **What it does:** `terraform fmt -check` + `terraform validate`
 **No secrets needed:** Runs with `-backend=false`
 
@@ -248,9 +248,8 @@ az provider register --namespace Microsoft.Storage
 
 **Trigger:** Push to `main` or PR with `terraform/**` changes
 **Evidence needed:**
-- [ ] Screenshot: GitHub Actions run — green ✅
-- [ ] Screenshot: `terraform fmt -check` passed
-- [ ] Screenshot: `terraform validate` passed
+
+![alt text](../assets/image1.png)
 
 <!-- SCREENSHOT PLACEHOLDER -->
 <!-- Save as: docs/assets/cicd-validate.png -->
@@ -259,10 +258,9 @@ az provider register --namespace Microsoft.Storage
 
 ### Plan Workflow
 
-**Trigger:** Pull request with `terraform/**` changes
+**Trigger:** Pull request with `terraform/**` changes and Manual dispatch
 **Evidence needed:**
-- [ ] Screenshot: GitHub Actions run — plan succeeded
-- [ ] Screenshot: PR comment showing plan output (~25 resources)
+![alt text](../assets/image-1.1.png)
 
 <!-- SCREENSHOT PLACEHOLDER -->
 <!-- Save as: docs/assets/cicd-plan-run.png -->
@@ -274,13 +272,7 @@ az provider register --namespace Microsoft.Storage
 
 **Trigger:** Manual dispatch with `"apply"` confirmation
 **Evidence needed:**
-- [ ] Screenshot: Manual trigger with "apply" typed
-- [ ] Screenshot: GitHub Actions run — apply succeeded
-- [ ] Screenshot: Resources created count
 
-<!-- SCREENSHOT PLACEHOLDER -->
-<!-- Save as: docs/assets/cicd-apply-trigger.png -->
-<!-- Save as: docs/assets/cicd-apply-success.png -->
 
 ---
 
@@ -290,8 +282,8 @@ az provider register --namespace Microsoft.Storage
 |------|:---------------:|:--------------:|
 | Prerequisites | ✅ Done manually | N/A (one-time setup) |
 | `terraform init` | ✅ Local terminal | ✅ In pipeline |
-| `terraform plan` | ✅ Local terminal | ✅ Auto on PR |
-| `terraform apply` | ✅ Local terminal | ✅ Manual dispatch |
+| `terraform plan` | ✅ Local terminal | ✅ Auto on PR, Manual dispatch |
+| `terraform apply` | ✅ Local terminal |  Manual dispatch |
 | Verification (V1-V10) | ✅ az CLI commands | Partial (outputs only) |
 | `terraform destroy` | ✅ Local terminal | ✅ Manual dispatch |
 
