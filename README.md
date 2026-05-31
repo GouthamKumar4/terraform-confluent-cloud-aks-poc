@@ -56,8 +56,6 @@ Data Flow:  AKS Pod → Key Vault (get creds) → DNS (resolve FQDN) → Private
 |----------|----------|
 | [Executive Summary](docs/executive-summary.md) | Management — 1-page overview |
 | [Presentation](docs/presentation.md) | Reviewers — standalone deck (export to PPTX/PDF) |
-| [Changelog](CHANGELOG.md) | Developers — implementation history |
-
 ---
 
 ## Repository Structure
