@@ -1,0 +1,33 @@
+name: "Terraform Plan: Platform"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [poc]
+        default: poc
+  pull_request:
+    paths:
+      - "terraform/platform/**"
+      - "terraform/modules/confluent/**"
+      - "terraform/modules/networking/**"
+      - "terraform/modules/aks/**"
+      - "terraform/modules/keyvault/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    uses: ./.github/workflows/_terraform-plan.yml
+    with:
+      working_directory: terraform/platform
+      var_file: platform-${{ inputs.environment || 'poc' }}.tfvars
+      backend_config: backend-${{ inputs.environment || 'poc' }}.hcl
+      runner: ubuntu-latest
+      plan_label: Platform
+    secrets: inherit

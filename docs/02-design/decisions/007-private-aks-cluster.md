@@ -43,7 +43,8 @@ Enable **private cluster** (`private_cluster_enabled = true`) — the AKS API se
 | Run `kubectl` commands | `az aks command invoke --command "kubectl ..."` |
 | Deploy test pods | `az aks command invoke` |
 | Debug networking | `az aks command invoke --command "kubectl exec ..."` |
-| CI/CD (future) | Self-hosted runner in VNet, OR `az aks command invoke` in pipeline |
+| App team CI/CD | Self-hosted runner pod on AKS — runs Terraform for topics/ACLs via PrivateLink ([ADR-009](009-monorepo-platform-teams-split.md)) |
+| Platform CI/CD | GitHub-hosted runner (`ubuntu-latest`) — creates cluster/network via management API (public) |
 
 ### Production Alternatives for Management Access
 

@@ -12,6 +12,7 @@
 | [006](006-azure-cni-for-aks.md) | Azure CNI for AKS networking | Proposed | May 2026 |
 | [007](007-private-aks-cluster.md) | Private AKS cluster (no public API) | Proposed | May 2026 |
 | [008](008-calico-network-policy.md) | Calico network policy engine | Proposed | May 2026 |
+| [009](009-monorepo-platform-teams-split.md) | Monorepo with platform/teams folder split | Proposed | June 2026 |
 
 ## ADR Format
 

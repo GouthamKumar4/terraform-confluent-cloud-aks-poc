@@ -19,7 +19,7 @@
 | 3 | Service account has **least-privilege** access | ACLs: WRITE + READ on topics, READ on consumer group — nothing else |
 | 4 | AKS cluster can **produce and consume** over private network | Kafka tools test from AKS pod |
 | 5 | All secrets stored in **Key Vault** (not in code/state logs) | `az keyvault secret list` shows 3 secrets |
-| 6 | Entire stack deployable with a single `terraform apply` | Runbook demonstrates end-to-end |
+| 6 | Entire stack deployable with `terraform apply` (platform + app teams) | Runbook demonstrates end-to-end |
 | 7 | CI/CD pipelines defined (validate, plan, apply) | GitHub Actions workflows exist |
 | 8 | Documentation enables **anyone** to reproduce | Runbook + architecture + presentation |
 

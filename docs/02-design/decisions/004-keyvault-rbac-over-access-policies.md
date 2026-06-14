@@ -34,6 +34,9 @@ Use **Azure RBAC** (`enable_rbac_authorization = true`) for Key Vault authorizat
 
 | Role | Assigned To | Purpose |
 |------|-------------|---------|
-| `Key Vault Secrets Officer` | Terraform deployer identity | Write secrets during provisioning |
-| `Key Vault Secrets User` | AKS kubelet identity | Read secrets at runtime |
+| `Key Vault Secrets Officer` | Platform Terraform deployer | Write cluster metadata secrets during platform provisioning |
+| `Key Vault Secrets Officer` | Self-hosted runner identity (app teams) | Read cluster metadata + write team API key secrets |
+| `Key Vault Secrets User` | AKS kubelet identity | Read all secrets at runtime (bootstrap, API keys) |
 | `Key Vault Administrator` | Service principal (subscription-level) | Create vault + assign RBAC |
+
+> **Split model note:** Key Vault acts as the integration point between platform and app team deployments. Platform writes cluster metadata, app teams read metadata and write their own API key secrets. See [ADR-009](009-monorepo-platform-teams-split.md).

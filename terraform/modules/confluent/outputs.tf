@@ -20,22 +20,6 @@ output "cluster_rest_endpoint" {
   sensitive   = true
 }
 
-output "service_account_id" {
-  description = "Service account ID"
-  value       = confluent_service_account.app.id
-}
-
-output "api_key_id" {
-  description = "API key ID (non-sensitive identifier)"
-  value       = confluent_api_key.app.id
-}
-
-output "api_key_secret" {
-  description = "API key secret — store in Key Vault, never expose"
-  value       = confluent_api_key.app.secret
-  sensitive   = true
-}
-
 output "network_id" {
   description = "Confluent network ID"
   value       = confluent_network.this.id
@@ -49,9 +33,4 @@ output "private_link_service_aliases" {
 output "confluent_dns_domain" {
   description = "DNS domain for the Confluent network (for private DNS zone)"
   value       = confluent_network.this.dns_domain
-}
-
-output "topic_names" {
-  description = "List of topic names (configured via var.topics, created via Confluent UI/CLI)"
-  value       = [for t in var.topics : t.name]
 }

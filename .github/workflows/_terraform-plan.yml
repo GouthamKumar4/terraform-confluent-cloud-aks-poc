@@ -1,0 +1,91 @@
+###############################################################################
+# Reusable Terraform Plan Template
+# Steps: checkout → setup → fmt check → init → validate → plan → PR comment
+# Called by: terraform-plan-*.yml callers
+###############################################################################
+name: "Reusable: Terraform Plan"
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Terraform root module directory"
+        type: string
+        required: true
+      var_file:
+        description: "Tfvars filename (e.g., platform-poc.tfvars)"
+        type: string
+        required: true
+      backend_config:
+        description: "Backend config file (e.g., backend-poc.hcl)"
+        type: string
+        required: true
+      runner:
+        description: "GitHub Actions runner label"
+        type: string
+        default: "ubuntu-latest"
+      plan_label:
+        description: "Label for PR comment header (e.g., Platform, Orders)"
+        type: string
+        required: true
+
+jobs:
+  plan:
+    name: ${{ inputs.plan_label }} Plan
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_USE_OIDC: true
+      TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+      TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+      TF_VAR_azure_subscription_id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_key_vault_id: ${{ secrets.KEY_VAULT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Terraform Init
+        run: terraform init -backend-config=${{ inputs.backend_config }}
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -var-file=${{ inputs.var_file }} -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Post Plan to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const output = `#### ${{ inputs.plan_label }} Plan 📋
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            *Triggered by @${{ github.actor }}*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Fail on Plan Error
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

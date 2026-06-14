@@ -25,6 +25,7 @@ Go to: Repository → Settings → Secrets and variables → Actions
 | `ARM_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id` |
 | `CONFLUENT_CLOUD_API_KEY` | Confluent Cloud API key | Runbook Step D |
 | `CONFLUENT_CLOUD_API_SECRET` | Confluent Cloud API secret | Runbook Step D |
+| `KEY_VAULT_ID` | Key Vault resource ID (after platform deploy) | Platform output |
 
 Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variables → Actions), not a secret.
 
@@ -32,31 +33,35 @@ Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variable
 
 ---
 
-## Workflow 1: Validate
+## Workflow Architecture
 
-**Trigger:** Automatic on PR or push to `main` (when `terraform/**` changes) or Even Manual Run 
-**What it does:** `terraform fmt -check` + `terraform validate`
-**No secrets needed:** Runs with `-backend=false`
+All workflows use **reusable templates** to eliminate duplication:
 
-**Expected result:**
-- Green ✅ — code is formatted and valid
+| File | Type | What It Does |
+|------|------|-------------|
+| `_terraform-plan.yml` | Template | fmt → init → validate → plan → PR comment |
+| `_terraform-apply.yml` | Template | init → apply |
+| `terraform-plan-platform.yml` | Caller | Passes platform inputs → template |
+| `terraform-apply-platform.yml` | Caller | Passes platform inputs → template |
+| `terraform-plan-orders.yml` | Caller | Passes orders inputs → template (self-hosted) |
+| `terraform-apply-orders.yml` | Caller | Passes orders inputs → template (self-hosted) |
+| `terraform-plan-payments.yml` | Caller | Passes payments inputs → template (self-hosted) |
+| `terraform-apply-payments.yml` | Caller | Passes payments inputs → template (self-hosted) |
 
-**Actual result:**
-```
-(paste GitHub Actions log or screenshot)
-```
+Each caller passes: `working_directory`, `var_file` (e.g., `platform-poc.tfvars`), `backend_config` (e.g., `backend-poc.hcl`), `runner`, and `plan_label`. All callers use `secrets: inherit`.
 
-<!-- SCREENSHOT: docs/assets/cicd-validate.png -->
+> **Adding an environment:** Add `dev` to the `options: [poc]` list in each caller. Create matching `*-dev.tfvars` and `backend-dev.hcl` files.
 
 ---
 
-## Workflow 2: Plan
+## Workflow 1: Platform Plan
 
-**Trigger:** Automatic on pull request (when `terraform/**` changes)
-**What it does:** `terraform plan -var-file=poc.tfvars` + posts plan as PR comment
+**Trigger:** Automatic on PR (when `terraform/platform/**` or `terraform/modules/confluent/**`, `networking/**`, `aks/**`, `keyvault/**` changes)
+**Runner:** `ubuntu-latest` (GitHub-hosted — management API is public)
+**What it does:** fmt check → `terraform init -backend-config=backend-<env>.hcl` → validate → `terraform plan -var-file=platform-<env>.tfvars` → posts plan as PR comment
 
 **Expected result:**
-- Plan shows ~25 resources to create
+- Plan shows ~20 resources to create (cluster, VNet, PE, AKS, KV)
 - PR comment with plan output
 
 **Actual result:**
@@ -64,24 +69,24 @@ Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variable
 (paste plan summary or screenshot)
 ```
 
-<!-- SCREENSHOT: docs/assets/cicd-plan-run.png -->
-<!-- SCREENSHOT: docs/assets/cicd-plan-pr-comment.png -->
+<!-- SCREENSHOT: docs/assets/cicd-platform-plan.png -->
 
 ---
 
-## Workflow 3: Apply
+## Workflow 2: Platform Apply
 
-**Trigger:** Manual dispatch (Actions → Run workflow → type `"apply"`)
-**What it does:** `terraform apply -var-file=poc.tfvars -auto-approve`
-**Safety gate:** Must type "apply" to confirm
+**Trigger:** Manual dispatch (Actions → "Terraform Apply: Platform" → type `"apply"`)
+**Runner:** `ubuntu-latest`
+**What it does:** `terraform apply -var-file=platform-<env>.tfvars -auto-approve`
 
 **Steps:**
-1. Go to Actions → "Terraform Apply" → Run workflow
+1. Go to Actions → "Terraform Apply: Platform" → Run workflow
 2. Type `apply` in the confirmation field
 3. Click "Run workflow"
 
 **Expected result:**
-- All resources created
+- Platform resources created (cluster, VNet, PE, AKS, KV)
+- Key Vault populated with cluster metadata secrets
 - Exit code 0
 
 **Actual result:**
@@ -89,17 +94,89 @@ Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variable
 (paste apply summary or screenshot)
 ```
 
-<!-- SCREENSHOT: docs/assets/cicd-apply-trigger.png -->
-<!-- SCREENSHOT: docs/assets/cicd-apply-success.png -->
+<!-- SCREENSHOT: docs/assets/cicd-platform-apply.png -->
 
 ---
 
-## Workflow 4: Destroy (manual)
+## Workflow 3: App Team Plan (Orders / Payments)
 
-**Not automated in pipeline.** Run locally:
+**Trigger:** Automatic on PR (when `terraform/teams/orders/**` or `terraform/modules/confluent-app/**` changes)
+**Runner:** `self-hosted` (AKS pod inside VNet — required for data plane access)
+**What it does:** `terraform plan -var-file=orders-<env>.tfvars` + posts plan as PR comment
+
+**Expected result:**
+- Plan shows ~7 resources to create per team (SA, API key, topics, ACLs)
+- PR comment with plan output
+
+> **Important:** Platform must be deployed first. App team plan/apply will fail if Key Vault secrets don't exist yet.
+
+**Actual result:**
+```
+(paste plan summary or screenshot)
+```
+
+<!-- SCREENSHOT: docs/assets/cicd-app-plan.png -->
+
+---
+
+## Workflow 4: App Team Apply (Orders / Payments)
+
+**Trigger:** Manual dispatch (Actions → "Terraform Apply: Orders" or "Terraform Apply: Payments" → type `"apply"`)
+**Runner:** `self-hosted` (AKS pod inside VNet)
+**What it does:** `terraform apply -var-file=orders-<env>.tfvars -auto-approve`
+
+**Steps:**
+1. Go to Actions → "Terraform Apply: Orders" → Run workflow
+2. Type `apply` in the confirmation field
+3. Click "Run workflow"
+
+**Expected result:**
+- Topics, SA, API key, ACLs created
+- API key stored in Key Vault (for AKS pods)
+- Exit code 0
+
+**Actual result:**
+```
+(paste apply summary or screenshot)
+```
+
+<!-- SCREENSHOT: docs/assets/cicd-app-apply.png -->
+
+---
+
+## Deployment Order
+
+```mermaid
+graph TD
+    P["Platform Apply<br>(ubuntu-latest)"] --> KV["Key Vault populated<br>cluster-id, env-id, rest-endpoint"]
+    KV --> O["Orders Apply<br>(self-hosted)"]
+    KV --> PA["Payments Apply<br>(self-hosted)"]
+    O --> KVO["KV: orders-api-key-*"]
+    PA --> KVP["KV: payments-api-key-*"]
+```
+
+> Platform **must** be applied before any app team. App teams are independent of each other and can run in parallel.
+
+---
+
+## Cleanup (manual)
+
+**Destroy order matters** — app teams first, then platform:
+
 ```bash
-cd terraform/environments/poc
-terraform destroy -var-file=poc.tfvars
+# 1. Destroy app teams (from self-hosted runner)
+cd terraform/teams/orders
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=orders-poc.tfvars
+
+cd ../payments
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=payments-poc.tfvars
+
+# 2. Destroy platform (from any runner)
+cd ../../platform
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=platform-poc.tfvars
 ```
 
 ---

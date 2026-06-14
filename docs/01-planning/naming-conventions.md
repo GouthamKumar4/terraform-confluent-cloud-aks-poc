@@ -28,7 +28,7 @@ Take `rg-unpr-poc-001`:
 One variable — everything is derived:
 
 ```hcl
-# poc.tfvars
+# platform.tfvars
 team_name = "unpr"   # ← team name
 
 # locals.tf
@@ -166,17 +166,29 @@ Every Azure resource receives these tags (via `local.common_tags`):
 | `managed_by` | `terraform` | Hardcoded |
 | `project` | `confluent-kafka-poc` | `var.tags` (default) |
 
-Custom tags can be added via `var.tags` in `poc.tfvars`.
+Custom tags can be added via `var.tags` in `platform.tfvars`.
 
 ---
 
 ## Key Vault Secret Names
 
+### Platform secrets (written by platform deployment)
+
 | Secret Name | Content | Source |
 |-------------|---------|--------|
-| `confluent-api-key-id` | Confluent API key identifier | Confluent module output |
-| `confluent-api-key-secret` | Confluent API key secret value | Confluent module output |
-| `kafka-bootstrap-endpoint` | Private bootstrap server address | Confluent module output |
+| `confluent-cluster-id` | Kafka cluster ID | Confluent module output |
+| `confluent-environment-id` | Confluent environment ID | Confluent module output |
+| `confluent-rest-endpoint` | Kafka REST endpoint (data plane) | Confluent module output |
+| `confluent-bootstrap` | Kafka bootstrap endpoint | Confluent module output |
+
+### App team secrets (written by each team's deployment)
+
+| Secret Name | Content | Source |
+|-------------|---------|--------|
+| `<team>-confluent-api-key-id` | Team's API key identifier | confluent-app module output |
+| `<team>-confluent-api-key-secret` | Team's API key secret value | confluent-app module output |
+
+Example: `orders-confluent-api-key-id`, `payments-confluent-api-key-secret`
 
 Convention: `<service>-<purpose>` with hyphens (Key Vault restriction: alphanumeric + hyphens only).
 

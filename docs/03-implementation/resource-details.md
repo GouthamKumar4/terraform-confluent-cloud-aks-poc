@@ -102,16 +102,21 @@
 
 **Service CIDR:** `10.1.0.0/16` | **DNS Service IP:** `10.1.0.10`
 
-### Key Vault (6 resources)
+### Key Vault (8+ resources)
 
-| # | Resource Type | Name (CAF) | Config | Module |
-|---|--------------|------------|--------|--------|
-| 16 | `azurerm_key_vault` | `kv-unpr-poc-001` | Standard, RBAC, purge protection | keyvault |
-| 17 | `azurerm_role_assignment` | Deployer → Secrets Officer | Write secrets during apply | keyvault |
-| 18 | `azurerm_role_assignment` | AKS kubelet MI → Secrets User | Runtime secret reads | keyvault |
-| 19 | `azurerm_key_vault_secret` | `confluent-api-key-id` | Confluent API key ID | keyvault |
-| 20 | `azurerm_key_vault_secret` | `confluent-api-key-secret` | Confluent API key secret | keyvault |
-| 21 | `azurerm_key_vault_secret` | `kafka-bootstrap-endpoint` | Kafka bootstrap URL | keyvault |
+| # | Resource Type | Name (CAF) | Config | Deployed By |
+|---|--------------|------------|--------|-------------|
+| 16 | `azurerm_key_vault` | `kv-unpr-poc-001` | Standard, RBAC, purge protection | Platform |
+| 17 | `azurerm_role_assignment` | Deployer → Secrets Officer | Write secrets during apply | Platform |
+| 18 | `azurerm_role_assignment` | AKS kubelet MI → Secrets User | Runtime secret reads | Platform |
+| 19 | `azurerm_key_vault_secret` | `confluent-cluster-id` | Kafka cluster ID | Platform |
+| 20 | `azurerm_key_vault_secret` | `confluent-environment-id` | Confluent environment ID | Platform |
+| 21 | `azurerm_key_vault_secret` | `confluent-rest-endpoint` | Kafka REST endpoint | Platform |
+| 22 | `azurerm_key_vault_secret` | `confluent-bootstrap` | Kafka bootstrap URL | Platform |
+| 23 | `azurerm_key_vault_secret` | `orders-confluent-api-key-id` | Orders team API key ID | App (orders) |
+| 24 | `azurerm_key_vault_secret` | `orders-confluent-api-key-secret` | Orders team API key secret | App (orders) |
+| 25 | `azurerm_key_vault_secret` | `payments-confluent-api-key-id` | Payments team API key ID | App (payments) |
+| 26 | `azurerm_key_vault_secret` | `payments-confluent-api-key-secret` | Payments team API key secret | App (payments) |
 
 **Key Vault Configuration:**
 

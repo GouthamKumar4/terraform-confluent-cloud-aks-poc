@@ -1,0 +1,29 @@
+name: "Terraform Apply: Platform"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [poc]
+        default: poc
+      confirm:
+        description: "Type 'apply' to confirm deployment"
+        required: true
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  apply:
+    if: github.event.inputs.confirm == 'apply'
+    uses: ./.github/workflows/_terraform-apply.yml
+    with:
+      working_directory: terraform/platform
+      var_file: platform-${{ inputs.environment }}.tfvars
+      backend_config: backend-${{ inputs.environment }}.hcl
+      runner: ubuntu-latest
+    secrets: inherit

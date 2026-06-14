@@ -43,8 +43,8 @@ style: |
 | # | Criteria |
 |:-:|---------|
 | 1 | Kafka cluster reachable **only** via PrivateLink (no public endpoint) |
-| 2 | 2 topics created (`orders`, `payments`) with produce/consume ACLs |
-| 3 | 1 service account + 1 API key — least-privilege access |
+| 2 | Topics created per team (`orders`, `payments`) with produce/consume ACLs |
+| 3 | Per-team service accounts + API keys — least-privilege, team-scoped access |
 | 4 | AKS cluster provisioned and able to reach Kafka privately |
 | 5 | All secrets stored securely (Key Vault — not in code) |
 | 6 | Run steps and verification steps documented |
@@ -71,14 +71,15 @@ style: |
 <!-- Replace with your diagram: docs/assets/architecture-overview.png -->
 ![bg right:55% contain](assets/architecture-hero.png)
 
-**Single `terraform apply` creates:**
+**Split-architecture `terraform apply` (platform → app teams) creates:**
 
-- Confluent Cloud: environment, network, Kafka cluster, SA, API key, topics, ACLs
-- Azure: VNet, subnets, NSGs, Private Endpoint, Private DNS zone
-- Azure: AKS cluster (private, workload identity)
-- Azure: Key Vault with 3 secrets
+- Platform: Confluent Cloud environment, network, Kafka cluster
+- Platform: Azure VNet, subnets, NSGs, Private Endpoint, Private DNS zone
+- Platform: AKS cluster (private, workload identity)
+- Platform: Key Vault with cluster metadata secrets
+- App teams: Service accounts, API keys, topics, ACLs (per team)
 
-**~25 resources total**
+**~25 resources total (platform ~20 + per-team ~5)**
 
 ---
 
@@ -125,18 +126,37 @@ AKS Pod
 
 ---
 
-# What Terraform Creates — Confluent
+# What Terraform Creates — Platform Team
 
+**Deployed by:** Platform team (GitHub-hosted runner or local)
 **Dependency chain (order matters):**
 
 | # | Resource | Purpose |
-|:-:|----------|---------|
-| 1 | Environment | Logical container |
-| 2 | Network | PrivateLink-enabled network |
+|:-:|----------|----------|
+| 1 | Confluent Environment | Logical container |
+| 2 | Confluent Network | PrivateLink-enabled network |
 | 3 | PL Access | Allow Azure subscription |
-| 4 | Cluster | Dedicated, 1 CKU |
-| 5 | Service Account | Application identity |
-| 6 | API Key | Cluster-scoped credentials |
+| 4 | Kafka Cluster | Dedicated, 1 CKU |
+| 5 | Azure VNet + PE + DNS | Private connectivity |
+| 6 | AKS Cluster | Private cluster + self-hosted runner |
+| 7 | Key Vault | Stores cluster metadata (4 secrets) |
+
+---
+
+# What Terraform Creates — App Teams
+
+**Deployed by:** Each app team (self-hosted runner on AKS — VNet access required)
+**Reads cluster metadata from Key Vault, creates team-scoped resources:**
+
+| # | Resource | Orders Team | Payments Team |
+|:-:|----------|------------|---------------|
+| 1 | Service Account | `sa-app-orders-poc-001` | `sa-app-payments-poc-001` |
+| 2 | API Key | Cluster-scoped | Cluster-scoped |
+| 3 | Topics | `orders` | `payments` |
+| 4 | ACLs | WRITE+READ on own topics | WRITE+READ on own topics |
+| 5 | KV Secrets | Writes `orders-confluent-api-key-*` | Writes `payments-confluent-api-key-*` |
+
+> **Isolation:** Orders SA has zero access to payments topics and vice versa.
 
 ---
 
@@ -151,8 +171,8 @@ AKS Pod
 | **NSGs** (×2) | Subnet-level traffic rules |
 | **Private Endpoint** | Connects to Confluent via PrivateLink |
 | **Private DNS Zone** | Resolves Kafka FQDN → PE private IP |
-| **AKS Cluster** | Private cluster + workload identity |
-| **Key Vault** | Stores API key, secret, bootstrap endpoint |
+| **AKS Cluster** | Private cluster + workload identity + self-hosted runner |
+| **Key Vault** | Integration point: platform writes cluster metadata, app teams write API keys |
 | **Log Analytics** | Container Insights for AKS |
 
 ---
@@ -197,21 +217,30 @@ AKS Pod
 # How to Run — Execution
 
 ```bash
-cd terraform/environments/poc
+# === Platform (GitHub-hosted runner or local) ===
+cd terraform/platform
 
-# 1. Initialize (downloads providers, configures backend)
-terraform init
+# 1. Initialize (configure backend for target environment)
+terraform init -backend-config=backend-poc.hcl
 
-# 2. Preview what will be created (~25 resources)
-terraform plan -var-file=poc.tfvars -out=tfplan
+# 2. Preview what will be created (~20 resources)
+terraform plan -var-file=platform-poc.tfvars -out=tfplan
 
-# 3. Create everything
+# 3. Create platform infrastructure
 terraform apply tfplan
 
-# 4. Verify (private cluster — uses ARM tunnel)
+# === App Team (self-hosted runner in VNet) ===
+cd ../teams/orders
+
+# 4. Deploy topics + SA + ACLs (requires VNet access)
+terraform init -backend-config=backend-poc.hcl
+terraform plan -var-file=orders-poc.tfvars -out=tfplan
+terraform apply tfplan
+
+# 5. Verify (private cluster — uses ARM tunnel)
 az aks command invoke \
-  --resource-group $(terraform output -raw resource_group_name) \
-  --name $(terraform output -raw aks_cluster_name) \
+  --resource-group rg-unpr-poc-001 \
+  --name aks-unpr-poc-001 \
   --command "kubectl get nodes"
 ```
 
@@ -297,6 +326,9 @@ This is the core success criteria of the POC.
 | **Key Vault RBAC** | Azure RBAC (not access policies) — auditable, consistent | [004](02-design/decisions/004-keyvault-rbac-over-access-policies.md) |
 | **Azure CNI** | Every pod gets a VNet IP — direct PE routing, no NAT | [006](02-design/decisions/006-azure-cni-for-aks.md) |
 | **Calico network policy** | Pod-to-pod traffic control (production-ready engine) | [008](02-design/decisions/008-calico-network-policy.md) |
+| **Split architecture** | Platform creates cluster; app teams create topics from VNet | [009](02-design/decisions/009-monorepo-platform-teams-split.md) |
+| **Reusable workflows** | Single plan/apply template, thin callers per deployment | — |
+| **Multi-env tfvars** | Same `.tf` code, different `*-poc.tfvars` + `backend-poc.hcl` per env | — |
 | **State file** | Remote backend (Azure Storage), versioned, encrypted, TLS 1.2 | — |
 | **Sensitive outputs** | 5 outputs marked `sensitive = true` — never leaked in logs | — |
 
@@ -312,7 +344,7 @@ This is the core success criteria of the POC.
 | AKS cluster provisioned via Terraform | ✅ |
 | AKS can do nslookup via private path  | ✅ |
 | Secrets in Key Vault (not in code) | ✅ |
-| Entire stack from single `terraform apply` (~20 min) | ✅ |
+| Split architecture: platform + app teams (~20 min + ~5 min) | ✅ |
 
 **All acceptance criteria met.**
 
@@ -354,7 +386,8 @@ This is the core success criteria of the POC.
 | 10 | [ADR-006: Azure CNI](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/006-azure-cni-for-aks.md) | VNet-integrated pods |
 | 11 | [ADR-007: Private AKS](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/007-private-aks-cluster.md) | No public API server |
 | 12 | [ADR-008: Calico](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/008-calico-network-policy.md) | Network policy engine |
-| 13 | [Terraform Modules](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/03-implementation/terraform-modules.md) | Module design, variables, validation |
+| 13 | [ADR-009: Split Architecture](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/decisions/009-monorepo-platform-teams-split.md) | Monorepo with platform/teams split |
+| 14 | [Terraform Modules](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/03-implementation/terraform-modules.md) | Module design, variables, validation |
 | 14 | [Resource Details](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/03-implementation/resource-details.md) | All provisioned resources |
 | 15 | [Issues & Resolutions](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/05-observations/issues-and-resolutions.md) | Problems encountered + fixes |
 | 16 | [Future Improvements](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/05-observations/future-improvements.md) | Production roadmap |

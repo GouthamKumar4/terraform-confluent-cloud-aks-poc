@@ -36,6 +36,13 @@
 
 > **These are shared resources** — one TF state backend serves ALL services (kafka, postgres, redis, etc.). That's why the name uses `terraform`, not a service name.
 
+> **Why a separate resource group?** This bootstrap RG (`rg-tfstate-*`) is created manually and **never managed by Terraform**. It holds the state storage account and deployer identity — resources that must survive across all `terraform apply` / `terraform destroy` cycles. If these lived inside the workload RG (`rg-unpr-poc-001`) that Terraform creates, `terraform destroy` would delete the storage account holding the state file — destroying the record of its own destroy.
+>
+> | Resource Group | Purpose | Created By | Survives `terraform destroy`? |
+> |----------------|---------|------------|:----:|
+> | `rg-tfstate-unpr-poc-001` | Bootstrap — state storage + deployer identity | `az CLI` (manual) | **Yes** |
+> | `rg-unpr-poc-001` | Workload — VNet, AKS, KV, PE, DNS | Terraform | **No** |
+
 ```bash
 # Login to Azure
 az login
@@ -306,10 +313,10 @@ Also add `ARM_USE_OIDC=true` as a **repository variable** (not secret).
 
 ### Step 1: Configure Variables
 ```bash
-cd terraform/environments/poc
+cd terraform/platform
 ```
 
-Non-sensitive values are already in `poc.tfvars` (committed to repo).
+Non-sensitive values are already in `platform-poc.tfvars` (committed to repo).
 
 Set sensitive variables via environment:
 ```bash
@@ -320,13 +327,13 @@ export TF_VAR_azure_subscription_id="<your-subscription-id>"
 
 ### Step 2: Initialize Terraform
 ```bash
-terraform init
+terraform init -backend-config=backend-poc.hcl
 ```
 Expected: Backend configured, providers downloaded.
 
 ### Step 3: Plan
 ```bash
-terraform plan -var-file=poc.tfvars -out=tfplan
+terraform plan -var-file=platform-poc.tfvars -out=tfplan
 ```
 Expected: ~20-25 resources to create. Review plan for correctness.
 
@@ -355,11 +362,11 @@ In some setups, the Private Link connection needs approval on the Confluent side
 
 #### 6.1 Set Variables
 ```bash
-RG_NAME=$(terraform output -raw resource_group_name)
-AKS_NAME=$(terraform output -raw aks_cluster_name)
-API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-id --query value -o tsv)
-API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-api-key-secret --query value -o tsv)
-BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name kafka-bootstrap-endpoint --query value -o tsv)
+RG_NAME="rg-unpr-poc-001"
+AKS_NAME="aks-unpr-poc-001"
+API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-confluent-api-key-id --query value -o tsv)
+API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-confluent-api-key-secret --query value -o tsv)
+BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-bootstrap --query value -o tsv)
 ```
 
 #### 6.2 Deploy Kafka Tools Pod
@@ -584,16 +591,19 @@ Check in portal AKS cluster is provisioned
 
 **Command:**
 ```bash
-KV_URI=$(terraform output -raw keyvault_uri)
-
-az keyvault secret list --id $KV_URI --query "[].name" -o tsv
+az keyvault secret list --vault-name kv-unpr-poc-001 --query "[].name" -o tsv
 ```
 
-**Expected:**
+**Expected (after platform + app team deploys):**
 ```
-confluent-api-key-id
-confluent-api-key-secret
-kafka-bootstrap-endpoint
+confluent-cluster-id
+confluent-environment-id
+confluent-rest-endpoint
+confluent-bootstrap
+orders-confluent-api-key-id
+orders-confluent-api-key-secret
+payments-confluent-api-key-id
+payments-confluent-api-key-secret
 ```
 
 **Actual output:**
@@ -785,6 +795,17 @@ echo \"test\" | kafka-console-producer --topic orders \
 
 ## Cleanup
 ```bash
-cd terraform/environments/poc
-terraform destroy -var-file=poc.tfvars
+# 1. Destroy app teams first (from self-hosted runner / VNet)
+cd terraform/teams/orders
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=orders-poc.tfvars
+
+cd ../payments
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=payments-poc.tfvars
+
+# 2. Destroy platform
+cd ../../platform
+terraform init -backend-config=backend-poc.hcl
+terraform destroy -var-file=platform-poc.tfvars
 ```

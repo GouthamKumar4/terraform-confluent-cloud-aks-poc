@@ -1,0 +1,58 @@
+###############################################################################
+# Reusable Terraform Apply Template
+# Steps: checkout → setup → init → apply
+# Called by: terraform-apply-*.yml callers
+###############################################################################
+name: "Reusable: Terraform Apply"
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Terraform root module directory"
+        type: string
+        required: true
+      var_file:
+        description: "Tfvars filename (e.g., platform-poc.tfvars)"
+        type: string
+        required: true
+      backend_config:
+        description: "Backend config file (e.g., backend-poc.hcl)"
+        type: string
+        required: true
+      runner:
+        description: "GitHub Actions runner label"
+        type: string
+        default: "ubuntu-latest"
+
+jobs:
+  apply:
+    name: Apply
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_USE_OIDC: true
+      TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+      TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+      TF_VAR_azure_subscription_id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_key_vault_id: ${{ secrets.KEY_VAULT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Terraform Init
+        run: terraform init -backend-config=${{ inputs.backend_config }}
+
+      - name: Terraform Apply
+        run: terraform apply -var-file=${{ inputs.var_file }} -auto-approve
