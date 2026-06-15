@@ -8,49 +8,70 @@
 
 ```mermaid
 graph TD
-    Root["Root Module<br>environments/poc/"]
-    RG["azurerm_resource_group.this"]
-    LOG["azurerm_log_analytics_workspace.this"]
-    
-    Root --> RG
-    Root --> LOG
-    Root --> CM["confluent module"]
-    Root --> NM["networking module"]
-    Root --> AKS["aks module"]
-    Root --> KV["keyvault module"]
-    
-    CM -->|private_link_service_aliases<br>dns_domain<br>bootstrap_endpoint| NM
-    NM -->|aks_subnet_id| AKS
-    CM -->|api_key_id, api_key_secret<br>bootstrap_endpoint| KV
-    AKS -->|kubelet_identity_object_id| KV
-    RG -->|resource_group_name| NM
-    RG -->|resource_group_name| AKS
-    RG -->|resource_group_name| KV
-    LOG -->|workspace_id| AKS
+    subgraph Platform["Platform Deployment (terraform/platform/)"]
+        Root["Root Module<br>platform/"]
+        RG["azurerm_resource_group.this"]
+        LOG["azurerm_log_analytics_workspace.this"]
+        
+        Root --> RG
+        Root --> LOG
+        Root --> CM["confluent module"]
+        Root --> NM["networking module"]
+        Root --> AKS["aks module"]
+        Root --> KV["keyvault module"]
+        
+        CM -->|private_link_service_aliases<br>dns_domain| NM
+        CM -->|cluster_id, env_id<br>rest_endpoint, bootstrap| KV
+        NM -->|aks_subnet_id| AKS
+        AKS -->|kubelet_identity_object_id| KV
+        RG -->|resource_group_name| NM
+        RG -->|resource_group_name| AKS
+        RG -->|resource_group_name| KV
+        LOG -->|workspace_id| AKS
+    end
+
+    subgraph AppTeam["App Team Deployment (terraform/teams/team/)"]
+        AppRoot["Root Module<br>teams/orders/"]
+        KVRead["data.azurerm_key_vault_secret<br>(cluster_id, env_id, rest_endpoint)"]
+        AppMod["confluent-app module<br>(topics + ACLs only)"]
+        
+        AppRoot --> KVRead
+        KVRead -->|values| AppMod
+    end
+
+    KV -.->|"Key Vault secrets<br>(integration point)"| KVRead
     
     style Root fill:#4472C4,color:#fff
     style CM fill:#ED7D31,color:#fff
     style NM fill:#70AD47,color:#fff
     style AKS fill:#7030A0,color:#fff
     style KV fill:#FFC000,color:#000
+    style AppRoot fill:#4472C4,color:#fff
+    style AppMod fill:#ED7D31,color:#fff
 ```
 
 ### Execution Order
 
-Terraform resolves dependencies automatically, but the logical order is:
+The architecture is split into two independent Terraform deployments (see [ADR-009](../02-design/decisions/009-monorepo-platform-teams-split.md)):
 
+**Platform deployment** (runs on GitHub-hosted runner — management API is public):
 1. **Resource Group** + **Log Analytics** (Azure infrastructure base)
-2. **Confluent Module** (environment → network → PL access → cluster → SA → API key → topics → ACLs)
+2. **Confluent Module** (environment → network → PL access → cluster)
 3. **Networking Module** (VNet → subnets → NSGs → PE → DNS) — depends on Confluent's PrivateLink aliases
 4. **AKS Module** (cluster → node pools) — depends on networking subnet
 5. **Key Vault Module** (vault → RBAC → secrets) — depends on Confluent outputs + AKS identity
+
+**App team deployment** (runs on self-hosted runner in VNet — data plane requires PrivateLink):
+1. **Read Key Vault** secrets (cluster_id, environment_id, rest_endpoint)
+2. **Confluent-App Module** (SA → API key → topics → ACLs via data plane)
+3. **Write Key Vault** secrets (api-key-id, api-key-secret for AKS pods)
 
 ---
 
 ## Module: `confluent`
 
 **Path:** `terraform/modules/confluent/`
-**Purpose:** Provisions all Confluent Cloud resources for private Kafka access.
+**Purpose:** Provisions Confluent Cloud platform infrastructure (environment, network, cluster). Management API only — no data plane resources.
 
 ### Resources Created (in dependency order)
 
@@ -60,8 +81,6 @@ Terraform resolves dependencies automatically, but the logical order is:
 | 2 | `confluent_network.this` | Network | PRIVATELINK network in target region + AZs |
 | 3 | `confluent_private_link_access.this` | PL Access | Grants your Azure subscription access |
 | 4 | `confluent_kafka_cluster.this` | Cluster | Dedicated, single-zone, N CKUs |
-| 5 | `confluent_service_account.app` | Service Account | Application identity |
-| 6 | `confluent_api_key.app` | API Key | Cluster-scoped credentials for the SA |
 
 
 ### Key Inputs
@@ -73,7 +92,6 @@ Terraform resolves dependencies automatically, but the logical order is:
 | `confluent_region` | string | Cloud region (e.g., `westeurope`) |
 | `cku_count` | number | Dedicated cluster units (default: 1) |
 | `azure_subscription_id` | string | Your subscription — allowed through PrivateLink |
-| `service_account_name` | string | SA display name |
 
 ### Key Outputs
 
@@ -82,10 +100,48 @@ Terraform resolves dependencies automatically, but the logical order is:
 | `environment_id` | No | Confluent environment ID |
 | `cluster_id` | No | Kafka cluster ID |
 | `cluster_bootstrap_endpoint` | **Yes** | Bootstrap server address |
-| `api_key_id` | No | API key identifier |
-| `api_key_secret` | **Yes** | API key secret value |
+| `cluster_rest_endpoint` | **Yes** | Kafka REST endpoint (data plane URL) |
 | `private_link_service_aliases` | No | Map of zone → PLS alias (consumed by networking) |
 | `confluent_dns_domain` | No | DNS domain for private DNS zone |
+
+---
+
+## Module: `confluent-app`
+
+**Path:** `terraform/modules/confluent-app/`
+**Purpose:** Provisions per-team Kafka resources (SA, API key, topics, ACLs). Uses the Kafka data plane API — must run from inside the VNet.
+
+### Resources Created (in dependency order)
+
+| # | Resource | Type | Purpose |
+|---|----------|------|---------|
+| 1 | `confluent_kafka_topic.this` | Topics | One per entry in `var.topics` |
+| 2 | `confluent_kafka_acl.producer` | ACL | WRITE per topic |
+| 3 | `confluent_kafka_acl.consumer` | ACL | READ per topic |
+| 4 | `confluent_kafka_acl.consumer_group` | ACL | READ on consumer group prefix |
+
+> **Note:** Service accounts and cluster API keys are NOT created by this module. They are pre-created by the cloud admin (Runbook Step D.2) and passed as `TF_VAR_*` inputs via GitHub Environment secrets.
+
+### Key Inputs
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `team_name` | string | Team name (used for topic prefix validation) |
+| `runtime_service_account_id` | string | Runtime SA ID (from GitHub Environment, created by admin) |
+| `runtime_api_key_id` | string | Cluster API key for runtime SA (from GitHub Environment) |
+| `runtime_api_key_secret` | string | Cluster API secret for runtime SA (from GitHub Environment) |
+| `cluster_id` | string | Kafka cluster ID (from Key Vault) |
+| `environment_id` | string | Confluent environment ID (from Key Vault) |
+| `rest_endpoint` | string | Kafka REST endpoint (from Key Vault) |
+| `topics` | list(object) | Topics to create (name, partitions, config) |
+| `consumer_group_prefix` | string | ACL prefix for consumer groups |
+
+### Key Outputs
+
+| Output | Sensitive | Description |
+|--------|:---------:|-------------|
+| `service_account_id` | No | Runtime SA ID (passthrough from input) |
+| `topic_names` | No | List of created topic names |
 ---
 
 ## Module: `networking`
@@ -159,7 +215,7 @@ AKS Cluster
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `cluster_name` | string | — | Cluster name (1-63 chars, validated) |
-| `kubernetes_version` | string | `"1.29"` | K8s version (major.minor) |
+| `kubernetes_version` | string | `"1.35"` | K8s version (major.minor) |
 | `node_count` | number | `2` | User node pool size (module: 1-1000; POC root: 1-5) |
 | `vm_size` | string | `"Standard_D2s_v5"` | Node VM SKU |
 | `subnet_id` | string | — | AKS subnet from networking module |
@@ -193,17 +249,31 @@ AKS Cluster
 
 ### Design: Generic, Not Confluent-Specific
 
-The Key Vault module accepts a generic `secrets` map and `reader_principal_ids` list — it has **no knowledge of Confluent**. The root module composes:
+The Key Vault module accepts a generic `secrets` map and `reader_principal_ids` list — it has **no knowledge of Confluent**. The platform root module writes cluster metadata:
 
 ```hcl
+# terraform/platform/main.tf
 module "keyvault" {
   secrets = {
-    "confluent-api-key-id"       = module.confluent.api_key_id
-    "confluent-api-key-secret"   = module.confluent.api_key_secret
-    "kafka-bootstrap-endpoint"   = module.confluent.cluster_bootstrap_endpoint
+    "confluent-cluster-id"     = module.confluent.cluster_id
+    "confluent-environment-id" = module.confluent.environment_id
+    "confluent-rest-endpoint"  = module.confluent.cluster_rest_endpoint
+    "confluent-bootstrap"      = module.confluent.cluster_bootstrap_endpoint
   }
-  reader_principal_ids = [module.aks.kubelet_identity_object_id]
+  reader_principal_ids = { "aks-kubelet" = module.aks.kubelet_identity_object_id }
 }
+```
+
+App team deployments read cluster metadata from KV. Confluent credentials come from GitHub Environment secrets (`TF_VAR_*`):
+```hcl
+# terraform/teams/orders/main.tf
+data "azurerm_key_vault_secret" "cluster_id" {
+  name         = "confluent-cluster-id"
+  key_vault_id = var.key_vault_id
+}
+
+# Deployer + runtime credentials come from var.* (GitHub Environment)
+# var.confluent_cloud_api_key, var.runtime_service_account_id, etc.
 ```
 
 ### Key Inputs

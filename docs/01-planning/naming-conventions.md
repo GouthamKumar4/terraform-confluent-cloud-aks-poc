@@ -28,7 +28,7 @@ Take `rg-unpr-poc-001`:
 One variable — everything is derived:
 
 ```hcl
-# poc.tfvars
+# platform.tfvars
 team_name = "unpr"   # ← team name
 
 # locals.tf
@@ -36,7 +36,7 @@ team_env = "${var.team_name}-${var.environment_short}"  # → "unpr-poc"
 
 # All names generated:
 #   rg-unpr-poc-001, vnet-unpr-poc-001, aks-unpr-poc-001
-#   kafka-unpr-poc-001 (cluster), sa-app-unpr-poc-001
+#   kafka-unpr-poc-001 (cluster)
 ```
 
 | Segment | Description | Example Values |
@@ -51,7 +51,7 @@ team_env = "${var.team_name}-${var.environment_short}"  # → "unpr-poc"
 | Category | Examples |
 |----------|---------|
 | **Azure infra** | `rg-unpr-poc-001`, `aks-unpr-poc-001`, `kv-unpr-poc-001`, `vnet-unpr-poc-001` |
-| **Confluent** | `kafka-unpr-poc-001` (cluster), `sa-app-unpr-poc-001`, `net-unpr-poc-001` |
+| **Confluent** | `kafka-unpr-poc-001` (cluster), `sa-deployer-orders-poc-001`, `sa-app-orders-poc-001`, `net-unpr-poc-001` |
 | **Bootstrap** | `rg-tfstate-unpr-poc-001`, `sttfstateunprpoc001`, `sc-tfstate-unpr-poc-001`, `id-terraform-unpr-poc-001` |
 
 ---
@@ -103,7 +103,8 @@ Same team name pattern, defined in `locals.tf`:
 | Environment | `poc` |
 | Network | `net-unpr-poc-001` |
 | Cluster | `kafka-unpr-poc-001` |
-| Service Account | `sa-app-unpr-poc-001` |
+| Deployer SA | `sa-deployer-<team>-poc-001` (per team, manual) |
+| Runtime SA | `sa-app-<team>-poc-001` (per team, manual) |
 | Topics | `orders`, `payments` (user-defined) |
 | DNS Zone | `privatelink.confluent.cloud` (fixed) |
 
@@ -166,17 +167,32 @@ Every Azure resource receives these tags (via `local.common_tags`):
 | `managed_by` | `terraform` | Hardcoded |
 | `project` | `confluent-kafka-poc` | `var.tags` (default) |
 
-Custom tags can be added via `var.tags` in `poc.tfvars`.
+Custom tags can be added via `var.tags` in `platform.tfvars`.
 
 ---
 
 ## Key Vault Secret Names
 
+### Platform secrets (written by platform Terraform)
+
 | Secret Name | Content | Source |
 |-------------|---------|--------|
-| `confluent-api-key-id` | Confluent API key identifier | Confluent module output |
-| `confluent-api-key-secret` | Confluent API key secret value | Confluent module output |
-| `kafka-bootstrap-endpoint` | Private bootstrap server address | Confluent module output |
+| `confluent-cluster-id` | Kafka cluster ID | Confluent module output |
+| `confluent-environment-id` | Confluent environment ID | Confluent module output |
+| `confluent-rest-endpoint` | Kafka REST endpoint (data plane) | Confluent module output |
+| `confluent-bootstrap` | Kafka bootstrap endpoint | Confluent module output |
+
+### Per-team secrets (stored in GitHub Environment by cloud admin — Runbook Step D.2)
+
+| Secret Name | Content | Source |
+|-------------|---------|--------|
+| `CONFLUENT_CLOUD_API_KEY` | Deployer SA Cloud API key | Cloud admin → GitHub Env |
+| `CONFLUENT_CLOUD_API_SECRET` | Deployer SA Cloud API secret | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_SA_ID` | Runtime SA ID | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_API_KEY` | Runtime SA cluster API key | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_API_SECRET` | Runtime SA cluster API secret | Cloud admin → GitHub Env |
+
+GitHub Environment naming: `<team>-<env>` (e.g., `orders-poc`, `payments-poc`)
 
 Convention: `<service>-<purpose>` with hyphens (Key Vault restriction: alphanumeric + hyphens only).
 

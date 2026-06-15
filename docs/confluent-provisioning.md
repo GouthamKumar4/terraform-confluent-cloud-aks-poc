@@ -34,26 +34,6 @@ style: |
 
 ---
 
-# What's Covered
-
-| # | Section | What You'll See |
-|:-:|---------|----------------|
-| 1 | POC Objective | Goal + acceptance criteria |
-| 2 | Scope | In scope vs out of scope |
-| 3 | Architecture Overview | Big-picture system design |
-| 4 | Network Design | PrivateLink connectivity flow |
-| 5 | Security Model | Network, identity & secrets layers |
-| 6 | Deployment Approaches | 3 approaches compared |
-| 7 | Why Approach 2 | Split architecture justification |
-| 8 | What Terraform Creates | Platform + App team resources |
-| 9 | Component Deep-Dives | Confluent Kafka & AKS modules |
-| 10 | How to Run | Prerequisites + execution steps |
-| 11 | Proofs | Kafka, PE, AKS, connectivity |
-| 12 | Best Practices | ADRs + engineering decisions |
-| 13 | POC Outcome | Results + recommendation |
-
----
-
 # POC Objective
 
 > **Prove** that we can provision a private Confluent Kafka cluster, create topics with proper access controls, and connect from AKS — via Terraform for infrastructure and Kafka CLI (from private network) for data-plane operations, with zero public internet exposure.
@@ -91,13 +71,90 @@ style: |
 <!-- Replace with your diagram: docs/assets/architecture-overview.png -->
 ![bg right:55% contain](assets/architecture-hero.png)
 
-**What gets created (~25 resources):**
+**Split-architecture `terraform apply` (platform → app teams) creates:**
 
-- Confluent Cloud: Environment, Network, Kafka Cluster (Dedicated)
-- Azure: VNet, Subnets, NSGs, Private Endpoint, Private DNS Zone
-- Azure: AKS Cluster (private, workload identity)
-- Azure: Key Vault (cluster metadata secrets)
-- Confluent: Per-team Service Accounts, API Keys, Topics, ACLs
+- Platform: Confluent Cloud environment, network, Kafka cluster
+- Platform: Azure VNet, subnets, NSGs, Private Endpoint, Private DNS zone
+- Platform: AKS cluster (private, workload identity)
+- Platform: Key Vault with cluster metadata secrets
+- Cloud admin: Per-team deployer + runtime SAs, API keys (manual, stored in GitHub Environment)
+- App teams: Topics, ACLs (per team, from self-hosted runner)
+
+**~25 resources total (platform ~20 + per-team ~5)**
+
+---
+
+# Deployment Approaches
+
+> 3 ways to achieve the same goal — we chose **Approach 2**.
+
+| | 1️⃣ All-in-One | 2️⃣ Split (Platform + Teams) | 3️⃣ Existing VNet |
+|--|:--:|:--:|:--:|
+| **What** | One TF root creates everything. Topics via CLI from pod/VM | Platform deploys infra, each team deploys own topics via pipeline | Pre-existing VNet + VM. One TF apply creates all incl. topics |
+| **Team Isolation** | ❌ None | ✅ Strong (RBAC → 403) | ❌ None |
+| **New Team** | 🟡 Manual run | 🟢 Add folder + pipeline | 🟡 Re-run apply |
+| **Production-Ready** | ❌ | ✅ | 🟡 |
+
+> 📄 Full details: [approaches.md](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/approaches.md)
+
+---
+
+# Why Approach 2 — Split Architecture
+
+| Requirement | How Approach 2 Solves It |
+|-------------|--------------------------|
+| Team isolation | ResourceOwner RBAC → 403 on wrong prefix |
+| Independent deploys | Separate pipeline + state per team |
+| Secret scoping | GitHub Environments — teams can't read each other's secrets |
+| Production-realistic | Same pattern scales to N teams |
+| Auditability | Each team's changes = separate PR + plan |
+
+```
+Platform deploys infra → Cloud admin creates SAs → Each team deploys own topics
+```
+
+---
+
+<!-- _header: "Component Deep-Dives — Terraform Modules" -->
+
+# Confluent Kafka — How It's Provisioned
+
+![bg right:55% contain](assets/confluent-provisioning.png)
+
+> **Module:** `modules/confluent`
+
+| Feature | Setting |
+|---------|--------|
+| Tier | Dedicated (1 CKU) |
+| Region | westeurope |
+| Availability | Single-zone (POC) |
+| Networking | PrivateLink only (no public endpoint) |
+| Auth | SA + cluster-scoped API keys |
+| RBAC | ResourceOwner per topic prefix |
+| Provisioning time | ~45 min |
+
+> Dedicated tier required for PrivateLink.  
+> Topics + ACLs deployed separately by app teams (split architecture).
+
+---
+
+# AKS Cluster — How It's Provisioned
+
+![bg right:55% contain](assets/aks-provisioning.png)
+
+> **Module:** `modules/aks`
+
+| Feature | Setting |
+|---------|--------|
+| API server | Private only |
+| CNI | Azure CNI |
+| Network policy | Calico |
+| Node size | D2s_v5 |
+| Workload Identity | OIDC enabled |
+| Auth | Entra ID + Azure RBAC |
+
+> Private cluster — API server has no public endpoint.  
+> Management via `az aks command invoke` (ARM tunnel).
 
 ---
 
@@ -127,45 +184,6 @@ AKS Pod
 
 ---
 
-# Confluent Kafka
-
-![bg right:55% contain](assets/confluent-provisioning.png)
-
-> **Module:** `modules/confluent` (platform) → Environment, Network, Cluster  · `modules/confluent-app` (app teams) → Topics, ACLs
-
-| Feature | Setting |
-|---------|--------|
-| Tier | Dedicated (1 CKU) |
-| Region | westeurope |
-| Availability | Single-zone (POC) |
-| Networking | PrivateLink only (no public endpoint) |
-| Auth | SA + cluster-scoped API keys |
-| RBAC | ResourceOwner per topic prefix |
-| Provisioning time | ~1 hr |
-
-
----
-
-# AKS Cluster
-
-![bg right:55% contain](assets/aks-provisioning.png)
-
-> **Module:** `modules/aks`
-
-| Feature | Setting |
-|---------|--------|
-| API server | Private only |
-| CNI | Azure CNI |
-| Network policy | Calico |
-| Node size | D2s_v5 |
-| Workload Identity | OIDC enabled |
-| Auth | Entra ID + Azure RBAC |
-
-> Private cluster — no public endpoint.  
-> Management via `az aks command invoke` (ARM tunnel).
-
----
-
 # Security Model
 
 > **Module:** `modules/keyvault` + cross-cutting config
@@ -183,39 +201,6 @@ AKS Pod
 **Secrets layer:**
 - Key Vault with Azure RBAC
 - No secrets in code, logs, or state outputs
-
----
-
-# Deployment Approaches
-
-> 3 ways to achieve the same goal — we chose **Approach 2**.
-
-| | 1️⃣ All-in-One | 2️⃣ Split (Platform + Teams) | 3️⃣ Existing VNet |
-|--|:--:|:--:|:--:|
-| **What** | One TF root creates everything. Topics via CLI from pod/VM | Platform deploys infra, each team deploys own topics via pipeline | Pre-existing VNet + VM. One TF apply creates all incl. topics |
-| **Team Isolation** | ❌ None | ✅ Strong (RBAC → 403) | ❌ None |
-| **New Team** | 🟡 Manual run | 🟢 Add folder + pipeline | 🟡 Re-run apply |
-| **Production-Ready** | ❌ | ✅ | 🟡 |
-
-> 📄 Full details: [approaches.md](https://github.com/GouthamKumar4/terraform-confluent-cloud-aks-poc/blob/main/docs/02-design/approaches.md)
-
----
-
-# Why Approach 2 — Split Architecture
-
-| Who | What They Do | Runner |
-|-----|-------------|--------|
-| 🧑‍💻 Platform team | Infra: Confluent + Azure + AKS + Key Vault | GitHub-hosted |
-| 🧑‍💼 Cloud admin | Creates per-team SAs + API keys (manual) | — |
-| 👥 App teams | Topics + ACLs (own prefix only) | Self-hosted (VNet) |
-
-| Requirement | How Approach 2 Solves It |
-|-------------|--------------------------|
-| Team isolation | ResourceOwner RBAC → 403 on wrong prefix |
-| Independent deploys | Separate pipeline + state per team |
-| Secret scoping | GitHub Environments — teams can't read each other's secrets |
-| Production-realistic | Same pattern scales to N teams |
-| Auditability | Each team's changes = separate PR + plan |
 
 ---
 
@@ -242,19 +227,20 @@ AKS Pod
 
 # What Terraform Creates — App Teams
 
-> **Prerequisites (created by cloud admin — Runbook Step D.2):**
-> - Deployer SA: `sa-deployer-orders-poc-001` (ResourceOwner on `orders*`)
-> - Runtime SA: `sa-app-orders-poc-001` + cluster API key
-> - All stored in GitHub Environment secrets (5 per team)
->
-> **Isolation:** Confluent RBAC returns 403 if orders-team tries to create `payments*` topics.
-
-**Each team deploys via own pipeline** (self-hosted runner in VNet):
+**Deployed by:** Each app team (self-hosted runner on AKS — VNet access required)
+**Reads cluster metadata from Key Vault, creates team-scoped resources:**
 
 | # | Resource | Orders Team | Payments Team |
 |:-:|----------|------------|---------------|
 | 1 | Topics | `orders` | `payments` |
 | 2 | ACLs | WRITE+READ on own topics | WRITE+READ on own topics |
+
+> **Created by cloud admin (Runbook Step D.2):**
+> - Deployer SA: `sa-deployer-orders-poc-001` (ResourceOwner on `orders*`)
+> - Runtime SA: `sa-app-orders-poc-001` + cluster API key
+> - All stored in GitHub Environment secrets (5 per team)
+>
+> **Isolation:** Confluent RBAC returns 403 if orders-team tries to create `payments*` topics.
 
 ---
 
@@ -374,7 +360,6 @@ az aks command invoke \
 - **No public internet involved** in the data path
 
 This is the core success criteria of the POC.
-
 ---
 
 # Best Practices Applied
@@ -394,8 +379,6 @@ This is the core success criteria of the POC.
 | **Sensitive outputs** | 5 outputs marked `sensitive = true` — never leaked in logs | — |
 
 > Each ADR documents context, alternatives considered, and trade-offs.
-
----
 
 # POC Outcome
 

@@ -13,11 +13,6 @@ output "confluent_cluster_id" {
   value       = module.confluent.cluster_id
 }
 
-output "confluent_topic_names" {
-  description = "Created Kafka topic names"
-  value       = module.confluent.topic_names
-}
-
 output "vnet_id" {
   description = "Virtual Network ID"
   value       = module.networking.vnet_id
@@ -38,10 +33,14 @@ output "keyvault_uri" {
   value       = module.keyvault.vault_uri
 }
 
-output "keyvault_secret_uris" {
-  description = "Map of secret name to versionless Key Vault secret URI"
-  value       = module.keyvault.secret_uris
-  sensitive   = true
+output "keyvault_id" {
+  description = "Key Vault resource ID (pass to app teams for secret read/write)"
+  value       = module.keyvault.vault_id
+}
+
+output "keyvault_name" {
+  description = "Key Vault name"
+  value       = module.keyvault.vault_name
 }
 
 # --- Deployer Identity (bootstrap reference) ---

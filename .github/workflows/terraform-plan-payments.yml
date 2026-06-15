@@ -1,0 +1,33 @@
+# App team workflows run on self-hosted runner (AKS pod inside VNet)
+# because topic/ACL creation uses the Kafka data plane API via PrivateLink
+name: "Terraform Plan: Payments"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [poc]
+        default: poc
+  pull_request:
+    paths:
+      - "terraform/teams/payments/**"
+      - "terraform/modules/confluent-app/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    uses: ./.github/workflows/_terraform-plan.yml
+    with:
+      working_directory: terraform/teams/payments
+      var_file: payments-${{ inputs.environment || 'poc' }}.tfvars
+      backend_config: backend-${{ inputs.environment || 'poc' }}.hcl
+      runner: self-hosted
+      plan_label: Payments
+      environment: payments-${{ inputs.environment || 'poc' }}
+    secrets: inherit

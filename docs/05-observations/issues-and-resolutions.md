@@ -64,15 +64,19 @@ Refactored to a single `azurecaf_name.this` with `for_each` over a map in `local
 The Key Vault module had hardcoded variables like `confluent_api_key_id`, `confluent_api_key_secret`, and `kafka_bootstrap_endpoint`. This made the module unusable for any other project.
 
 **Resolution:**
-Replaced with a generic `secrets = map(string)` input and `reader_principal_ids = list(string)`. The root module now composes secrets from Confluent module outputs:
+Replaced with a generic `secrets = map(string)` input and `reader_principal_ids = map(string)`. The platform root module now composes secrets from Confluent module outputs:
 
 ```hcl
+# terraform/platform/main.tf
 secrets = {
-  "confluent-api-key-id"     = module.confluent.api_key_id
-  "confluent-api-key-secret" = module.confluent.api_key_secret
-  "kafka-bootstrap-endpoint" = module.confluent.cluster_bootstrap_endpoint
+  "confluent-cluster-id"     = module.confluent.cluster_id
+  "confluent-environment-id" = module.confluent.environment_id
+  "confluent-rest-endpoint"  = module.confluent.cluster_rest_endpoint
+  "confluent-bootstrap"      = module.confluent.cluster_bootstrap_endpoint
 }
 ```
+
+App team secrets (deployer key, runtime SA, cluster API key) are pre-created by the cloud admin and stored in GitHub Environment secrets (`orders-poc`, `payments-poc`). App teams read cluster metadata from KV only.
 
 **Lesson:** Modules should be generic. Domain-specific composition belongs in the root module.
 

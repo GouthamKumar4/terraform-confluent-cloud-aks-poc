@@ -105,45 +105,6 @@ variable "confluent_cku_count" {
   }
 }
 
-variable "consumer_group_prefix" {
-  description = "Consumer group prefix for ACL"
-  type        = string
-  default     = "poc-"
-
-  validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]*$", var.consumer_group_prefix))
-    error_message = "consumer_group_prefix must start with alphanumeric and contain only lowercase letters, numbers, and hyphens."
-  }
-}
-
-variable "topics" {
-  description = "Kafka topics to create"
-  type = list(object({
-    name       = string
-    partitions = number
-    config     = optional(map(string), {})
-  }))
-  default = [
-    { name = "orders", partitions = 3, config = {} },
-    { name = "payments", partitions = 3, config = {} }
-  ]
-
-  validation {
-    condition     = length(var.topics) > 0
-    error_message = "At least one topic must be defined."
-  }
-
-  validation {
-    condition     = alltrue([for t in var.topics : t.partitions >= 1 && t.partitions <= 256])
-    error_message = "Topic partitions must be between 1 and 256."
-  }
-
-  validation {
-    condition     = alltrue([for t in var.topics : can(regex("^[a-zA-Z0-9._-]+$", t.name))])
-    error_message = "Topic names must contain only alphanumeric characters, dots, hyphens, or underscores."
-  }
-}
-
 # --- Networking ---
 variable "vnet_address_space" {
   description = "VNet address space"
@@ -187,7 +148,7 @@ variable "aks_subnet_prefix" {
 variable "kubernetes_version" {
   description = "Kubernetes version for AKS"
   type        = string
-  default     = "1.29"
+  default     = "1.35"
 }
 
 variable "aks_node_count" {

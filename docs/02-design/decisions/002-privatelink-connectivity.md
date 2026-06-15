@@ -31,6 +31,7 @@ Use **Azure PrivateLink** for private connectivity between AKS and Confluent Kaf
 - **Unidirectional** — Confluent cannot initiate connections back to your VNet (not needed for Kafka)
 - **Cost** — Private Endpoint has a small hourly cost (~$0.01/hr)
 - **DNS complexity** — requires Private DNS Zone + A record for FQDN resolution
+- **Data plane restriction** — Kafka REST API (topics, ACLs) is only reachable via PrivateLink, requiring app team Terraform to run from inside the VNet. This drove the split deployment model with a self-hosted runner on AKS. See [ADR-009](009-monorepo-platform-teams-split.md).
 
 ### Alternatives Considered
 - **VNet Peering:** Requires Enterprise tier (even more expensive), CIDR coordination with Confluent, and bilateral peering approval. Overkill for this use case.
