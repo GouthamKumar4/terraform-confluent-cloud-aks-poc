@@ -5,9 +5,13 @@
 # Runs from self-hosted runner (AKS pod) inside VNet because topics and ACLs
 # use the Kafka REST API (data plane), only reachable via PrivateLink.
 #
-# NOTE: Service accounts and cluster API keys are created manually by cloud
-# admin (Runbook Step D.2) and passed as inputs. This allows the deployer SA
-# to use ResourceOwner (prefix-scoped) instead of EnvironmentAdmin.
+# Authentication:
+#   Authorization:  Deployer SA Cloud API key in provider (ResourceOwner on team prefix)
+#   Connectivity:   Deployer SA Cluster API key in credentials block (data plane access)
+#   ACL principal:  Runtime SA ID — receives ACL grants, has no other permissions
+#
+# NOTE: Service accounts and API keys are created manually by cloud admin
+# (Runbook Step D.2) and passed as inputs.
 ###############################################################################
 
 # --- Topics (data plane — requires PrivateLink connectivity) ---
@@ -25,8 +29,8 @@ resource "confluent_kafka_topic" "this" {
   config = each.value.config
 
   credentials {
-    key    = var.runtime_api_key_id
-    secret = var.runtime_api_key_secret
+    key    = var.deployer_cluster_api_key_id
+    secret = var.deployer_cluster_api_key_secret
   }
 }
 
@@ -50,8 +54,8 @@ resource "confluent_kafka_acl" "producer" {
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = var.runtime_api_key_id
-    secret = var.runtime_api_key_secret
+    key    = var.deployer_cluster_api_key_id
+    secret = var.deployer_cluster_api_key_secret
   }
 
   depends_on = [confluent_kafka_topic.this]
@@ -75,8 +79,8 @@ resource "confluent_kafka_acl" "consumer" {
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = var.runtime_api_key_id
-    secret = var.runtime_api_key_secret
+    key    = var.deployer_cluster_api_key_id
+    secret = var.deployer_cluster_api_key_secret
   }
 
   depends_on = [confluent_kafka_topic.this]
@@ -98,7 +102,7 @@ resource "confluent_kafka_acl" "consumer_group" {
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = var.runtime_api_key_id
-    secret = var.runtime_api_key_secret
+    key    = var.deployer_cluster_api_key_id
+    secret = var.deployer_cluster_api_key_secret
   }
 }

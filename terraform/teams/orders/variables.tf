@@ -22,18 +22,18 @@ variable "confluent_cloud_api_secret" {
 }
 
 variable "runtime_service_account_id" {
-  description = "Confluent runtime service account ID (from GitHub Environment)"
+  description = "Confluent runtime service account ID — ACL beneficiary (from GitHub Environment)"
   type        = string
 }
 
-variable "runtime_api_key_id" {
-  description = "Confluent runtime cluster API key ID (from GitHub Environment)"
+variable "deployer_cluster_api_key_id" {
+  description = "Deployer SA cluster-scoped API key ID (ResourceOwner — from GitHub Environment)"
   type        = string
   sensitive   = true
 }
 
-variable "runtime_api_key_secret" {
-  description = "Confluent runtime cluster API key secret (from GitHub Environment)"
+variable "deployer_cluster_api_key_secret" {
+  description = "Deployer SA cluster-scoped API key secret (ResourceOwner — from GitHub Environment)"
   type        = string
   sensitive   = true
 }

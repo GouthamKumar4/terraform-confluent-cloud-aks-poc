@@ -4,18 +4,18 @@ variable "team_name" {
 }
 
 variable "runtime_service_account_id" {
-  description = "Confluent service account ID for the runtime SA (created by cloud admin, from GitHub Environment)"
+  description = "Confluent runtime service account ID — ACL beneficiary only (created by cloud admin, from GitHub Environment)"
   type        = string
 }
 
-variable "runtime_api_key_id" {
-  description = "Cluster-scoped API key ID for the runtime SA (created by cloud admin, from GitHub Environment)"
+variable "deployer_cluster_api_key_id" {
+  description = "Cluster-scoped API key ID for the deployer SA (ResourceOwner — authenticates to data plane REST endpoint)"
   type        = string
   sensitive   = true
 }
 
-variable "runtime_api_key_secret" {
-  description = "Cluster-scoped API key secret for the runtime SA (created by cloud admin, from GitHub Environment)"
+variable "deployer_cluster_api_key_secret" {
+  description = "Cluster-scoped API key secret for the deployer SA (ResourceOwner — authenticates to data plane REST endpoint)"
   type        = string
   sensitive   = true
 }

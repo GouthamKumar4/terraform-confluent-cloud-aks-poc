@@ -4,9 +4,10 @@
 #
 # Runs from: Self-hosted GitHub Actions runner (AKS pod inside VNet)
 # Reads from: Platform Key Vault (cluster_id, environment_id, rest_endpoint)
-# Authenticates via: Per-team deployer Cloud API key from GitHub Environment
-#                    (ResourceOwner on payments*)
-# Runtime SA + cluster API key also from GitHub Environment secrets
+# Authenticates via: Per-team deployer SA from GitHub Environment
+#   - Cloud API key (provider) — ResourceOwner authorization
+#   - Cluster API key (credentials) — data plane connectivity via PrivateLink
+# Runtime SA ID used only as ACL principal (beneficiary)
 ###############################################################################
 
 # --- Read platform outputs from Key Vault ---
@@ -29,13 +30,13 @@ data "azurerm_key_vault_secret" "rest_endpoint" {
 module "confluent_app" {
   source = "../../modules/confluent-app"
 
-  team_name                  = var.team_name
-  runtime_service_account_id = var.runtime_service_account_id
-  runtime_api_key_id         = var.runtime_api_key_id
-  runtime_api_key_secret     = var.runtime_api_key_secret
-  cluster_id                 = data.azurerm_key_vault_secret.cluster_id.value
-  environment_id             = data.azurerm_key_vault_secret.environment_id.value
-  rest_endpoint              = data.azurerm_key_vault_secret.rest_endpoint.value
-  topics                     = var.topics
-  consumer_group_prefix      = var.consumer_group_prefix
+  team_name                      = var.team_name
+  runtime_service_account_id     = var.runtime_service_account_id
+  deployer_cluster_api_key_id     = var.deployer_cluster_api_key_id
+  deployer_cluster_api_key_secret = var.deployer_cluster_api_key_secret
+  cluster_id                     = data.azurerm_key_vault_secret.cluster_id.value
+  environment_id                 = data.azurerm_key_vault_secret.environment_id.value
+  rest_endpoint                  = data.azurerm_key_vault_secret.rest_endpoint.value
+  topics                         = var.topics
+  consumer_group_prefix          = var.consumer_group_prefix
 }
