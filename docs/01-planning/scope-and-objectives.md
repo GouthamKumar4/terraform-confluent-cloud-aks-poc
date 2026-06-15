@@ -4,10 +4,6 @@
 
 > Provision a Private Confluent Cloud Kafka Cluster and Topics using Terraform, with an AKS cluster for workload execution and Key Vault for secret management.
 
-**Requested By:** _(fill in)_
-**Deadline:** 2 days for documentation/presentation review
-**Date:** May 2026
-
 ---
 
 ## Success Criteria
