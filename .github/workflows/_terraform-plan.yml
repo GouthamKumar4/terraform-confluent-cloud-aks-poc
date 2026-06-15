@@ -2,6 +2,9 @@
 # Reusable Terraform Plan Template
 # Steps: checkout → setup → fmt check → init → validate → plan → PR comment
 # Called by: terraform-plan-*.yml callers
+#
+# Secrets are scoped via GitHub Environments (e.g., platform-poc, orders-poc).
+# Each environment holds only the secrets that deployment target needs.
 ###############################################################################
 name: "Reusable: Terraform Plan"
 
@@ -28,11 +31,16 @@ on:
         description: "Label for PR comment header (e.g., Platform, Orders)"
         type: string
         required: true
+      environment:
+        description: "GitHub Environment name (e.g., platform-poc, orders-poc) — scopes secrets"
+        type: string
+        required: true
 
 jobs:
   plan:
     name: ${{ inputs.plan_label }} Plan
     runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
@@ -41,16 +49,31 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
       ARM_USE_OIDC: true
-      TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
-      TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
       TF_VAR_azure_subscription_id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       TF_VAR_key_vault_id: ${{ secrets.KEY_VAULT_ID }}
+      # Confluent credentials — scoped by GitHub Environment:
+      #   platform-poc: OrganizationAdmin Cloud API key
+      #   orders-poc:   ResourceOwner deployer Cloud API key for orders*
+      #   payments-poc: ResourceOwner deployer Cloud API key for payments*
+      TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+      TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+      # Runtime SA + cluster API key (app team environments only — empty for platform)
+      TF_VAR_runtime_service_account_id: ${{ secrets.CONFLUENT_RUNTIME_SA_ID }}
+      TF_VAR_runtime_api_key_id: ${{ secrets.CONFLUENT_RUNTIME_API_KEY }}
+      TF_VAR_runtime_api_key_secret: ${{ secrets.CONFLUENT_RUNTIME_API_SECRET }}
 
     steps:
+      - name: Validate environment matches var file
+        run: |
+          ENV_PREFIX=$(echo "${{ inputs.environment }}" | cut -d'-' -f1)
+          VAR_PREFIX=$(echo "${{ inputs.var_file }}" | cut -d'-' -f1)
+          if [ "$ENV_PREFIX" != "$VAR_PREFIX" ]; then
+            echo "::error::Environment prefix '$ENV_PREFIX' does not match var_file prefix '$VAR_PREFIX'"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~> 1.5"

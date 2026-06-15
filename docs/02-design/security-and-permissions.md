@@ -30,16 +30,18 @@ graph TD
     end
     
     subgraph Confluent_IDs["Confluent Cloud"]
-        CSA["Service Account<br>sa-terraform-unpr-poc-001<br>(provisioning)"]
-        OSA["Service Account<br>sa-app-orders-poc-001"]
-        PSA["Service Account<br>sa-app-payments-poc-001"]
+        CSA["Service Account<br>sa-terraform-unpr-poc-001<br>(platform provisioning)"]
+        DSA["Deployer SAs<br>sa-deployer-orders/payments-poc-001<br>(ResourceOwner on team prefix)"]
+        OSA["Runtime SA<br>sa-app-orders-poc-001"]
+        PSA["Runtime SA<br>sa-app-payments-poc-001"]
     end
     
     MI -->|Contributor + RBAC Admin| Azure_Resources
     MI -->|OIDC federation| GitHub_Actions
     SP -.->|Alternative: same roles| Azure_Resources
-    SHR -->|"KV Secrets Officer<br>(read + write)"| KV[Key Vault]
+    SHR -->|"KV Secrets User<br>(read only)"| KV[Key Vault]
     SHR -->|"PrivateLink path"| Kafka_DataPlane["Kafka Data Plane<br>(topics, ACLs)"]
+    DSA -->|"ResourceOwner<br>(prefix-scoped)"| Kafka_DataPlane
     CSA -->|OrganizationAdmin| Confluent_Resources
     OSA -->|"ACLs: orders topics"| Kafka
     PSA -->|"ACLs: payments topics"| Kafka
@@ -69,7 +71,7 @@ graph TD
 |------------|-------|------------|---------|
 | `Contributor` | Subscription | Create/manage all Azure resources (RG, VNet, AKS, KV, PE, DNS) | Platform |
 | `Role Based Access Control Administrator` | Subscription (with condition) | Assign Key Vault RBAC roles (Secrets Officer for deployer, Secrets User for AKS) | Platform |
-| `Key Vault Secrets Officer` | Key Vault | Write cluster metadata secrets, read/write team API key secrets | Platform + App teams |
+| `Key Vault Secrets Officer` | Key Vault | Write cluster metadata secrets during platform deploy | Platform only |
 
 > **Why Managed Identity over Service Principal?**
 > - **No client secret** — MI never generates a password. No secret to store, rotate, or leak.
@@ -81,22 +83,41 @@ graph TD
 ### 2. Confluent Terraform Service Account (Platform Provisioning)
 
 **Identity:** `sa-terraform-unpr-poc-001` (Confluent Cloud Service Account)
-**Used by:** Platform Terraform — creates environment, network, cluster only (no topics, no ACLs)
-**Authentication:** Confluent Cloud API key (`CONFLUENT_CLOUD_API_KEY` / `CONFLUENT_CLOUD_API_SECRET`)
-**Used by:** Confluent Terraform provider
-**Authentication:** Cloud API key + secret
+**Used by:** Platform Terraform only — creates environment, network, cluster
+**Authentication:** Confluent Cloud API key (`CONFLUENT_CLOUD_API_KEY` / `CONFLUENT_CLOUD_API_SECRET` from GitHub Secrets)
 
 | Confluent Role | Scope | Why Needed |
 |----------------|-------|------------|
-| `OrganizationAdmin` | Organization | Create environments, networks, clusters, SAs, API keys, topics, ACLs |
+| `OrganizationAdmin` | Organization | Create environments, networks, clusters |
 
-> **Security note:** OrganizationAdmin is broad. In production, use granular roles like `EnvironmentAdmin` per environment.
+> **Security note:** OrganizationAdmin is broad but only used by the platform deployment. App teams never see this key. See [ADR-010](decisions/010-scoped-confluent-api-keys.md).
+
+### 2b. App-Team Deployer Service Account (Provisioning — Confluent)
+
+**Identity:** Per-team — `sa-deployer-orders-poc-001`, `sa-deployer-payments-poc-001` (Confluent Cloud Service Accounts)
+**Created by:** Cloud admin (manual, per team onboarding — see [Runbook Step D.2](../04-runsteps-and-verification/runbook.md))
+**Used by:** App team Terraform deployments — creates topics and ACLs only
+**Authentication:** Cloud API key stored in GitHub Environment secret (`CONFLUENT_CLOUD_API_KEY` / `CONFLUENT_CLOUD_API_SECRET` in `<team>-poc`)
+
+| Confluent Role | Scope | Why Needed |
+|----------------|-------|------------|
+| `ResourceOwner` | `Topic:<team>*` (PREFIXED) | Create/manage topics matching team prefix |
+| `ResourceOwner` | `Group:<team>*` (PREFIXED) | Manage consumer group ACLs matching team prefix |
+
+> **What it cannot do:**
+> - Create topics outside team prefix (Confluent returns 403)
+> - Create service accounts or API keys (org-level only)
+> - Delete or modify the environment, network, or cluster
+>
+> **Per-team isolation:** Each team has its own deployer SA and GitHub Environment. Confluent RBAC enforces prefix at the API level — not just Terraform validation. Teams cannot see each other's Cloud API keys.
+>
+> **Defence in depth:** Prefix isolation is enforced at three levels: Confluent RBAC (ResourceOwner → 403), Terraform validation (`startswith`), and CODEOWNERS review.
 
 ### 3. Application Service Account (Runtime — Confluent)
 
 **Identity:** Per-team Confluent Cloud Service Account (e.g., `sa-app-orders-poc-001`, `sa-app-payments-poc-001`)
-**Created by:** Terraform (confluent-app module, deployed by each app team)
-**Authentication:** Cluster-scoped API key (stored in Key Vault as `<team>-confluent-api-key-*`)
+**Created by:** Cloud admin (manual, same onboarding step — [Runbook Step D.2](../04-runsteps-and-verification/runbook.md))
+**Authentication:** Cluster-scoped API key (stored in GitHub Environment secret as `CONFLUENT_RUNTIME_API_KEY` / `CONFLUENT_RUNTIME_API_SECRET`)
 
 | ACL | Resource Type | Resource Name | Pattern | Operation |
 |-----|--------------|---------------|---------|-----------|
@@ -140,9 +161,9 @@ graph TD
         Runner["Self-Hosted Runner Pod"]
     end
     
-    Runner -->|"Workload Identity<br>or Pod MI"| KV["Key Vault<br>(read cluster metadata<br>+ write API keys)"]
-    Runner -->|"Confluent Cloud API key<br>(via TF_VAR_*)"| MGMT["Confluent Management API<br>(create SA, API key)"]
-    Runner -->|"Via PrivateLink"| DATA["Confluent Data Plane API<br>(create topics, ACLs)"]
+    Runner -->|"Workload Identity<br>or Pod MI"| KV["Key Vault<br>(read cluster metadata)"]
+    Runner -->|"Scoped Cloud API key<br>(from GitHub Env, ResourceOwner)"| MGMT["Confluent Management API<br>(create ACLs)"]
+    Runner -->|"Via PrivateLink"| DATA["Confluent Data Plane API<br>(create topics)"]
     
     style Runner fill:#70AD47,color:#fff
     style KV fill:#FFC000,color:#000
@@ -153,12 +174,12 @@ graph TD
 | Requirement | How It's Met |
 |-------------|-------------|
 | Network access to Kafka REST API | Pod runs in AKS subnet → routed to PE → PrivateLink → Confluent |
-| Azure Key Vault read/write | Workload Identity (OIDC) or kubelet MI → `Key Vault Secrets Officer` role |
-| Confluent Cloud auth | `TF_VAR_confluent_cloud_api_key` + `TF_VAR_confluent_cloud_api_secret` via GitHub Secrets |
+| Azure Key Vault read | Workload Identity (OIDC) or kubelet MI → `Key Vault Secrets User` role |
+| Confluent Cloud auth | Per-team scoped Cloud API key from GitHub Environment (`CONFLUENT_CLOUD_API_KEY`) — ResourceOwner on team prefix, NOT OrganizationAdmin |
 | Terraform state access | MI → Storage Account IAM (same deployer identity) |
 | GitHub Actions registration | Runner token from GitHub → registered as self-hosted runner |
 
-> **Key Vault RBAC for app teams:** The self-hosted runner identity needs `Key Vault Secrets Officer` (not just `Secrets User`) because it must both **read** platform secrets (cluster_id, rest_endpoint) and **write** app secrets (API key id/secret) back to Key Vault.
+> **Key Vault RBAC for app teams:** The self-hosted runner identity needs `Key Vault Secrets User` to **read** platform secrets (cluster_id, rest_endpoint). Per-team Confluent credentials (deployer key, runtime SA, cluster API key) are stored in GitHub Environment secrets — not Key Vault.
 
 ---
 
@@ -172,10 +193,13 @@ graph TD
 | `ARM_TENANT_ID` | GitHub Secret → env var | Azure provider auth |
 | `ARM_SUBSCRIPTION_ID` | GitHub Secret → env var | Azure provider auth |
 | `ARM_USE_OIDC` | GitHub Variable → env var | Enables OIDC token exchange (no secret needed) |
-| `CONFLUENT_CLOUD_API_KEY` | GitHub Secret → `TF_VAR_*` | Confluent provider auth |
-| `CONFLUENT_CLOUD_API_SECRET` | GitHub Secret → `TF_VAR_*` | Confluent provider auth |
+| `CONFLUENT_CLOUD_API_KEY` | GitHub Secret → `TF_VAR_*` | Confluent provider auth — **platform only** (OrganizationAdmin) |
+| `CONFLUENT_CLOUD_API_SECRET` | GitHub Secret → `TF_VAR_*` | Confluent provider auth — **platform only** |
+| `KEY_VAULT_ID` | GitHub Secret → `TF_VAR_*` | App teams: Key Vault resource ID |
 
 > **No `ARM_CLIENT_SECRET`.** Managed Identity + OIDC federation eliminates all Azure secrets.
+>
+> **App teams do NOT use `CONFLUENT_CLOUD_API_KEY` from repo-level GitHub Secrets.** Each team’s GitHub Environment (`orders-poc`, `payments-poc`) has its own scoped Cloud API key (`ResourceOwner`), stored by cloud admin during onboarding. See [ADR-010](decisions/010-scoped-confluent-api-keys.md).
 
 ### Runtime Secrets (Application)
 
@@ -185,8 +209,11 @@ graph TD
 | Confluent Environment ID | Key Vault: `confluent-environment-id` | Platform | App teams (Terraform) | Deployer MI → KV RBAC |
 | Kafka REST Endpoint | Key Vault: `confluent-rest-endpoint` | Platform | App teams (Terraform) | Deployer MI → KV RBAC |
 | Kafka Bootstrap Endpoint | Key Vault: `confluent-bootstrap` | Platform | AKS pods | Kubelet identity → KV RBAC |
-| Team API Key ID | Key Vault: `<team>-confluent-api-key-id` | App team | AKS pods | Kubelet identity → KV RBAC |
-| Team API Key Secret | Key Vault: `<team>-confluent-api-key-secret` | App team | AKS pods | Kubelet identity → KV RBAC |
+| Team Deployer Cloud API Key | GitHub Env: `CONFLUENT_CLOUD_API_KEY` | Cloud admin (manual) | App teams (Terraform provider) | GitHub Environment scoping |
+| Team Deployer Cloud API Secret | GitHub Env: `CONFLUENT_CLOUD_API_SECRET` | Cloud admin (manual) | App teams (Terraform provider) | GitHub Environment scoping |
+| Runtime SA ID | GitHub Env: `CONFLUENT_RUNTIME_SA_ID` | Cloud admin (manual) | App teams (Terraform — ACL principal) | GitHub Environment scoping |
+| Runtime Cluster API Key | GitHub Env: `CONFLUENT_RUNTIME_API_KEY` | Cloud admin (manual) | App teams (Terraform) + AKS pods | GitHub Environment + KV for pods |
+| Runtime Cluster API Secret | GitHub Env: `CONFLUENT_RUNTIME_API_SECRET` | Cloud admin (manual) | App teams (Terraform) + AKS pods | GitHub Environment + KV for pods |
 
 ### Secret Flow
 
@@ -198,20 +225,21 @@ sequenceDiagram
     participant KV as Azure Key Vault
     participant AKS as AKS Pod
 
-    Note over PTF,KV: Step 1: Platform deploy
+    Note over PTF,KV: Phase 1: Platform deploy
     PTF->>CF: Create cluster + network
     CF-->>PTF: Return cluster_id, env_id, rest_endpoint, bootstrap
     PTF->>KV: Store cluster metadata (4 secrets)
 
-    Note over ATF,KV: Step 2: App team deploy (from VNet)
-    ATF->>KV: Read cluster_id, env_id, rest_endpoint
-    ATF->>CF: Create service account + API key
-    CF-->>ATF: Return API key ID + secret
-    ATF->>KV: Store team-confluent-api-key-id, team-confluent-api-key-secret
+    Note over PTF,KV: Step D.2: Cloud admin onboarding (manual)
+    Note right of CF: Admin creates deployer SA + runtime SA<br>per team, stores in GitHub Environment (5 secrets each)
+
+    Note over ATF,KV: Phase 2: App team deploy (from VNet)
+    ATF->>KV: Read cluster metadata (3 secrets)
+    ATF->>CF: Create topics + ACLs (data plane via PrivateLink)
 
     Note over AKS,CF: Runtime (no secrets in pod spec)
     AKS->>KV: Read secrets (via kubelet managed identity)
-    KV-->>AKS: Return team API key + bootstrap endpoint
+    KV-->>AKS: Return runtime cluster API key + bootstrap endpoint
     AKS->>CF: Connect to Kafka using API key (via PrivateLink)
 ```
 
@@ -236,7 +264,6 @@ Variables and outputs marked `sensitive = true` to prevent leaking in CLI/CI log
 
 | Output | Module | Why Sensitive |
 |--------|--------|---------------|
-| `api_key_secret` | confluent-app | API key secret value |
 | `cluster_bootstrap_endpoint` | confluent | Private Kafka endpoint address |
 | `cluster_rest_endpoint` | confluent | Private REST API URL |
 | `kube_config_raw` | aks | Full cluster credentials |
@@ -250,7 +277,7 @@ Variables and outputs marked `sensitive = true` to prevent leaking in CLI/CI log
 |---|---------|:------:|----------|
 | 1 | Kafka has no public endpoint | ✅ | PrivateLink-only cluster |
 | 2 | AKS API server is private | ✅ | `private_cluster_enabled = true` |
-| 3 | Secrets in Key Vault, not in code | ✅ | 4 platform + 2 per team secrets stored in KV |
+| 3 | Secrets in Key Vault / GitHub Env, not in code | ✅ | 4 platform secrets in KV + per-team credentials in GitHub Environment |
 | 4 | Key Vault uses RBAC (not access policies) | ✅ | `enable_rbac_authorization = true` |
 | 5 | AKS uses managed identity (no stored creds) | ✅ | System-assigned MI |
 | 6 | Terraform sensitive outputs marked | ✅ | 5 outputs marked sensitive |

@@ -29,4 +29,5 @@ jobs:
       backend_config: backend-${{ inputs.environment || 'poc' }}.hcl
       runner: self-hosted
       plan_label: Payments
+      environment: payments-${{ inputs.environment || 'poc' }}
     secrets: inherit

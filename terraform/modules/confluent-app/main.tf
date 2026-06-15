@@ -1,39 +1,14 @@
 ###############################################################################
 # Confluent App Module — Team-level resources
-# Creates: Service Account, API Key, Topics, ACLs
+# Creates: Topics, ACLs
 #
 # Runs from self-hosted runner (AKS pod) inside VNet because topics and ACLs
 # use the Kafka REST API (data plane), only reachable via PrivateLink.
+#
+# NOTE: Service accounts and cluster API keys are created manually by cloud
+# admin (Runbook Step D.2) and passed as inputs. This allows the deployer SA
+# to use ResourceOwner (prefix-scoped) instead of EnvironmentAdmin.
 ###############################################################################
-
-# Service Account — one per team
-resource "confluent_service_account" "this" {
-  display_name = var.service_account_name
-  description  = "Service account for ${var.team_name} team Kafka access"
-}
-
-# API Key for the service account
-resource "confluent_api_key" "this" {
-  display_name           = "${var.service_account_name}-api-key"
-  description            = "API key for ${var.service_account_name}"
-  disable_wait_for_ready = true
-
-  owner {
-    id          = confluent_service_account.this.id
-    api_version = confluent_service_account.this.api_version
-    kind        = confluent_service_account.this.kind
-  }
-
-  managed_resource {
-    id          = var.cluster_id
-    api_version = "cmk/v2"
-    kind        = "Cluster"
-
-    environment {
-      id = var.environment_id
-    }
-  }
-}
 
 # --- Topics (data plane — requires PrivateLink connectivity) ---
 resource "confluent_kafka_topic" "this" {
@@ -50,8 +25,8 @@ resource "confluent_kafka_topic" "this" {
   config = each.value.config
 
   credentials {
-    key    = confluent_api_key.this.id
-    secret = confluent_api_key.this.secret
+    key    = var.runtime_api_key_id
+    secret = var.runtime_api_key_secret
   }
 }
 
@@ -68,15 +43,15 @@ resource "confluent_kafka_acl" "producer" {
   resource_type = "TOPIC"
   resource_name = each.value.name
   pattern_type  = "LITERAL"
-  principal     = "User:${confluent_service_account.this.id}"
+  principal     = "User:${var.runtime_service_account_id}"
   host          = "*"
   operation     = "WRITE"
   permission    = "ALLOW"
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = confluent_api_key.this.id
-    secret = confluent_api_key.this.secret
+    key    = var.runtime_api_key_id
+    secret = var.runtime_api_key_secret
   }
 
   depends_on = [confluent_kafka_topic.this]
@@ -93,15 +68,15 @@ resource "confluent_kafka_acl" "consumer" {
   resource_type = "TOPIC"
   resource_name = each.value.name
   pattern_type  = "LITERAL"
-  principal     = "User:${confluent_service_account.this.id}"
+  principal     = "User:${var.runtime_service_account_id}"
   host          = "*"
   operation     = "READ"
   permission    = "ALLOW"
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = confluent_api_key.this.id
-    secret = confluent_api_key.this.secret
+    key    = var.runtime_api_key_id
+    secret = var.runtime_api_key_secret
   }
 
   depends_on = [confluent_kafka_topic.this]
@@ -116,14 +91,14 @@ resource "confluent_kafka_acl" "consumer_group" {
   resource_type = "GROUP"
   resource_name = var.consumer_group_prefix
   pattern_type  = "PREFIXED"
-  principal     = "User:${confluent_service_account.this.id}"
+  principal     = "User:${var.runtime_service_account_id}"
   host          = "*"
   operation     = "READ"
   permission    = "ALLOW"
   rest_endpoint = var.rest_endpoint
 
   credentials {
-    key    = confluent_api_key.this.id
-    secret = confluent_api_key.this.secret
+    key    = var.runtime_api_key_id
+    secret = var.runtime_api_key_secret
   }
 }

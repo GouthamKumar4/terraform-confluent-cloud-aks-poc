@@ -1,50 +1,121 @@
 ###############################################################################
-# Orders Team Deployment
-# Creates: Service Account, API Key, Topics, ACLs
+# Platform Deployment — Root Module
+# Composes: Confluent (cluster only), Networking, AKS, Key Vault
+# Naming: uses local.names from locals.tf (format: <prefix>-<team>-<env>-<suffix>)
 #
-# Runs from: Self-hosted GitHub Actions runner (AKS pod inside VNet)
-# Reads from: Platform Key Vault (cluster_id, environment_id, rest_endpoint)
-# Writes to: Platform Key Vault (api-key-id, api-key-secret for AKS pods)
+# Authentication:
+#   Azure:     Managed Identity (id-terraform-unpr-poc-001) + OIDC federation
+#              → ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_USE_OIDC=true
+#   Confluent: Cloud API key/secret via TF_VAR_* env vars
+#
+# This deployment creates the infrastructure foundation:
+#   - Confluent environment, network, cluster (management API — public)
+#   - Azure VNet, PE, DNS (connects to Confluent's PrivateLink service)
+#   - AKS cluster (hosts self-hosted runner for app team deployments)
+#   - Key Vault (stores cluster metadata for app teams + secrets for AKS pods)
+#
+# App teams (orders, payments) deploy separately from terraform/teams/<team>/
 ###############################################################################
 
-# --- Read platform outputs from Key Vault ---
-data "azurerm_key_vault_secret" "cluster_id" {
-  name         = "confluent-cluster-id"
-  key_vault_id = var.key_vault_id
+# --- Deployer Identity (created manually in Runbook Step B) ---
+data "azurerm_user_assigned_identity" "deployer" {
+  name                = "id-terraform-${var.team_name}-${var.environment_short}-${var.unique_suffix}"
+  resource_group_name = "rg-tfstate-${var.team_name}-${var.environment_short}-${var.unique_suffix}"
 }
 
-data "azurerm_key_vault_secret" "environment_id" {
-  name         = "confluent-environment-id"
-  key_vault_id = var.key_vault_id
+# Resource Group
+resource "azurerm_resource_group" "this" {
+  name     = local.names.rg
+  location = var.location
+  tags     = local.common_tags
 }
 
-data "azurerm_key_vault_secret" "rest_endpoint" {
-  name         = "confluent-rest-endpoint"
-  key_vault_id = var.key_vault_id
+# --- Log Analytics Workspace (for AKS Container Insights) ---
+resource "azurerm_log_analytics_workspace" "this" {
+  name                = local.names.law
+  location            = var.location
+  resource_group_name = azurerm_resource_group.this.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.common_tags
 }
 
-# --- Confluent App Module (topics + SA + ACLs) ---
-module "confluent_app" {
-  source = "../../modules/confluent-app"
+# --- Confluent Module (platform only — no SA, no topics) ---
+module "confluent" {
+  source = "../modules/confluent"
 
-  team_name             = var.team_name
-  service_account_name  = var.service_account_name
-  cluster_id            = data.azurerm_key_vault_secret.cluster_id.value
-  environment_id        = data.azurerm_key_vault_secret.environment_id.value
-  rest_endpoint         = data.azurerm_key_vault_secret.rest_endpoint.value
-  topics                = var.topics
-  consumer_group_prefix = var.consumer_group_prefix
+  environment_name      = local.names.confluent_env
+  cluster_name          = local.names.confluent_cluster
+  confluent_region      = var.confluent_region
+  cku_count             = var.confluent_cku_count
+  azure_subscription_id = var.azure_subscription_id
 }
 
-# --- Write app secrets back to Key Vault (for AKS pods to consume) ---
-resource "azurerm_key_vault_secret" "api_key_id" {
-  name         = "${var.team_name}-confluent-api-key-id"
-  value        = module.confluent_app.api_key_id
-  key_vault_id = var.key_vault_id
+# --- Networking Module ---
+module "networking" {
+  source = "../modules/networking"
+
+  vnet_name           = local.names.vnet
+  location            = var.location
+  resource_group_name = azurerm_resource_group.this.name
+  vnet_address_space  = var.vnet_address_space
+  pe_subnet_prefix    = var.pe_subnet_prefix
+  aks_subnet_prefix   = var.aks_subnet_prefix
+
+  # From Confluent's network — their PL service aliases for your PE to connect to
+  confluent_private_link_service_aliases = module.confluent.private_link_service_aliases
+  confluent_dns_zone_name               = module.confluent.confluent_dns_domain
+  confluent_dns_record_name             = local.names.confluent_cluster
+
+  tags = local.common_tags
 }
 
-resource "azurerm_key_vault_secret" "api_key_secret" {
-  name         = "${var.team_name}-confluent-api-key-secret"
-  value        = module.confluent_app.api_key_secret
-  key_vault_id = var.key_vault_id
+# --- AKS Module ---
+module "aks" {
+  source = "../modules/aks"
+
+  cluster_name        = local.names.aks
+  location            = var.location
+  resource_group_name = azurerm_resource_group.this.name
+  dns_prefix          = "${local.env_short}-${local.suffix}"
+  kubernetes_version  = var.kubernetes_version
+  node_count          = var.aks_node_count
+  vm_size             = var.aks_vm_size
+  subnet_id           = module.networking.aks_subnet_id
+  service_cidr        = var.aks_service_cidr
+  dns_service_ip      = var.aks_dns_service_ip
+
+  log_analytics_workspace_id      = azurerm_log_analytics_workspace.this.id
+  api_server_authorized_ip_ranges = var.aks_authorized_ip_ranges
+  private_cluster_enabled         = var.aks_private_cluster_enabled
+  admin_group_object_ids          = var.aks_admin_group_object_ids
+
+  tags = local.common_tags
+}
+
+# --- Key Vault Module ---
+# Stores cluster metadata (for app teams) + will store app secrets later
+module "keyvault" {
+  source = "../modules/keyvault"
+
+  vault_name          = local.names.kv
+  location            = var.location
+  resource_group_name = azurerm_resource_group.this.name
+  allowed_ip_ranges   = var.keyvault_allowed_ips
+
+  # Grant AKS identity read access to secrets
+  reader_principal_ids = {
+    "aks-kubelet" = module.aks.kubelet_identity_object_id
+  }
+
+  # Platform writes cluster metadata so app teams can read it from KV
+  # App-team deployer keys are written manually by cloud admin (Runbook Step D.2)
+  secrets = {
+    "confluent-cluster-id"     = module.confluent.cluster_id
+    "confluent-environment-id" = module.confluent.environment_id
+    "confluent-rest-endpoint"  = module.confluent.cluster_rest_endpoint
+    "confluent-bootstrap"      = module.confluent.cluster_bootstrap_endpoint
+  }
+
+  tags = local.common_tags
 }

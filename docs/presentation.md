@@ -57,7 +57,7 @@ style: |
 |----------|-------------|
 | Confluent environment + Dedicated Kafka cluster | Production HA / multi-zone |
 | PrivateLink networking (VNet + PE + DNS) | Performance testing |
-| 2 topics, 1 service account, 1 API key, ACLs | Multi-region failover |
+| 2 topics, per-team SAs + API keys (cloud admin), ACLs | Multi-region failover |
 | AKS cluster provisioning | Application deployment (Helm) |
 | Key Vault for secret storage | Schema Registry, Kafka Connect |
 | Run steps + verification documentation | Monitoring & alerting |
@@ -77,9 +77,28 @@ style: |
 - Platform: Azure VNet, subnets, NSGs, Private Endpoint, Private DNS zone
 - Platform: AKS cluster (private, workload identity)
 - Platform: Key Vault with cluster metadata secrets
-- App teams: Service accounts, API keys, topics, ACLs (per team)
+- Cloud admin: Per-team deployer + runtime SAs, API keys (manual, stored in GitHub Environment)
+- App teams: Topics, ACLs (per team, from self-hosted runner)
 
 **~25 resources total (platform ~20 + per-team ~5)**
+
+---
+
+# AKS Cluster — How It's Provisioned
+
+![bg right:55% contain](assets/aks-provisioning.png)
+
+| Feature | Setting |
+|---------|--------|
+| API server | Private only |
+| CNI | Azure CNI |
+| Network policy | Calico |
+| Node size | D2s_v5 |
+| Workload Identity | OIDC enabled |
+| Auth | Entra ID + Azure RBAC |
+
+> Private cluster — API server has no public endpoint.  
+> Management via `az aks command invoke` (ARM tunnel).
 
 ---
 
@@ -129,7 +148,6 @@ AKS Pod
 # What Terraform Creates — Platform Team
 
 **Deployed by:** Platform team (GitHub-hosted runner or local)
-**Dependency chain (order matters):**
 
 | # | Resource | Purpose |
 |:-:|----------|----------|
@@ -137,9 +155,14 @@ AKS Pod
 | 2 | Confluent Network | PrivateLink-enabled network |
 | 3 | PL Access | Allow Azure subscription |
 | 4 | Kafka Cluster | Dedicated, 1 CKU |
-| 5 | Azure VNet + PE + DNS | Private connectivity |
-| 6 | AKS Cluster | Private cluster + self-hosted runner |
-| 7 | Key Vault | Stores cluster metadata (4 secrets) |
+| 5 | Resource Group | Container for all Azure resources |
+| 6 | VNet (10.0.0.0/22) | Network boundary |
+| 7 | PE Subnet + AKS Subnet | 10.0.0.0/26 · 10.0.1.0/24 |
+| 8 | NSGs (×2) | Subnet-level traffic rules |
+| 9 | Private Endpoint + DNS Zone | Kafka FQDN → PE private IP |
+| 10 | AKS Cluster | Private cluster + workload identity |
+| 11 | Key Vault | Stores cluster metadata (4 secrets) |
+| 12 | Log Analytics | Container Insights for AKS |
 
 ---
 
@@ -150,51 +173,15 @@ AKS Pod
 
 | # | Resource | Orders Team | Payments Team |
 |:-:|----------|------------|---------------|
-| 1 | Service Account | `sa-app-orders-poc-001` | `sa-app-payments-poc-001` |
-| 2 | API Key | Cluster-scoped | Cluster-scoped |
-| 3 | Topics | `orders` | `payments` |
-| 4 | ACLs | WRITE+READ on own topics | WRITE+READ on own topics |
-| 5 | KV Secrets | Writes `orders-confluent-api-key-*` | Writes `payments-confluent-api-key-*` |
+| 1 | Topics | `orders` | `payments` |
+| 2 | ACLs | WRITE+READ on own topics | WRITE+READ on own topics |
 
-> **Isolation:** Orders SA has zero access to payments topics and vice versa.
-
----
-
-# What Terraform Creates — Azure
-
-| Resource | Purpose |
-|----------|---------|
-| **Resource Group** | Container for all Azure resources |
-| **VNet** (10.0.0.0/22) | Network boundary |
-| **PE Subnet** (10.0.0.0/26) | Hosts the Private Endpoint |
-| **AKS Subnet** (10.0.1.0/24) | Hosts AKS node pools |
-| **NSGs** (×2) | Subnet-level traffic rules |
-| **Private Endpoint** | Connects to Confluent via PrivateLink |
-| **Private DNS Zone** | Resolves Kafka FQDN → PE private IP |
-| **AKS Cluster** | Private cluster + workload identity + self-hosted runner |
-| **Key Vault** | Integration point: platform writes cluster metadata, app teams write API keys |
-| **Log Analytics** | Container Insights for AKS |
-
----
-
-# AKS Cluster — How It's Provisioned
-
-<!-- AKS provisioning diagram: docs/assets/aks-provisioning.png -->
-![bg right:55% contain](assets/aks-provisioning.png)
-
-**Private AKS with full hardening:**
-
-| Feature | Setting |
-|---------|---------|
-| **API server** | Private only (no public FQDN) |
-| **Auth** | Entra ID + Azure RBAC |
-| **Local accounts** | Disabled |
-| **Node pools** | System (1) + User (2) · D2s_v5 |
-| **OS disk** | Managed (default; Ephemeral for prod) |
-| **CNI** | Azure CNI (VNet-integrated pods) |
-| **Network policy** | Calico |
-| **Workload Identity** | OIDC issuer enabled |
-| **Auto-upgrade** | Patch channel |
+> **Created by cloud admin (Runbook Step D.2):**
+> - Deployer SA: `sa-deployer-orders-poc-001` (ResourceOwner on `orders*`)
+> - Runtime SA: `sa-app-orders-poc-001` + cluster API key
+> - All stored in GitHub Environment secrets (5 per team)
+>
+> **Isolation:** Confluent RBAC returns 403 if orders-team tries to create `payments*` topics.
 
 ---
 
@@ -232,7 +219,7 @@ terraform apply tfplan
 # === App Team (self-hosted runner in VNet) ===
 cd ../teams/orders
 
-# 4. Deploy topics + SA + ACLs (requires VNet access)
+# 4. Deploy topics + ACLs (requires VNet access)
 terraform init -backend-config=backend-poc.hcl
 terraform plan -var-file=orders-poc.tfvars -out=tfplan
 terraform apply tfplan
@@ -244,7 +231,7 @@ az aks command invoke \
   --command "kubectl get nodes"
 ```
 
-**Deploy time: ~1hr to 2hr** (Dedicated cluster takes longest)
+**Deploy time: ~20 minutes** (Dedicated cluster provisioning runs in parallel with Azure resources)
 
 ---
 
@@ -258,7 +245,7 @@ az aks command invoke \
 - Dedicated Kafka cluster (1 CKU) in westeurope
 - PrivateLink networking enabled
 - 2 topics created: `orders`, `payments`
-- Service account + API key + ACLs configured
+- Per-team SAs + API keys created by cloud admin (stored in GitHub Environment)
 
 > Terraform output: `terraform output confluent_cluster_id`
 
@@ -340,7 +327,7 @@ This is the core success criteria of the POC.
 |----------------|:------:|
 | Private Kafka cluster provisioned via Terraform | ✅ |
 | Zero public internet exposure (PrivateLink) | ✅ |
-| Topics + SA + ACLs created automatically | ✅ |
+| Topics + ACLs created per team (SAs by cloud admin) | ✅ |
 | AKS cluster provisioned via Terraform | ✅ |
 | AKS can do nslookup via private path  | ✅ |
 | Secrets in Key Vault (not in code) | ✅ |
@@ -349,22 +336,6 @@ This is the core success criteria of the POC.
 **All acceptance criteria met.**
 
 > **Recommendation:** Pattern is proven. Ready for production design phase.
-
----
-
-# If Approved: Production Considerations
-
-| Area | What to Add | Priority |
-|------|------------|:--------:|
-| High availability | Multi-zone AKS, 3+ CKUs | P1 |
-| CI/CD pipeline | GitHub Actions / Azure DevOps with OIDC | P1 |
-| Disable local accounts | Enforce Entra-ID-only AKS auth | P1 |
-| Observability | Confluent metrics + Azure Monitor alerts | P2 |
-| Secret rotation | Key Vault + Confluent API key lifecycle | P2 |
-| Policy-as-code | OPA / Sentinel for governance | P3 |
-| Performance testing | Throughput baseline before go-live | P3 |
-
-> These are all documented in `docs/` for the production design phase.
 
 ---
 

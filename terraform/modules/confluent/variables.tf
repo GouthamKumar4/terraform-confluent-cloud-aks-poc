@@ -29,8 +29,3 @@ variable "confluent_availability_zones" {
   type        = list(string)
   default     = ["1", "2", "3"]
 }
-  default = [
-    { name = "orders", partitions = 3, config = {} },
-    { name = "payments", partitions = 3, config = {} }
-  ]
-}

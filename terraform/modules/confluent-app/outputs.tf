@@ -1,17 +1,6 @@
 output "service_account_id" {
-  description = "Confluent service account ID"
-  value       = confluent_service_account.this.id
-}
-
-output "api_key_id" {
-  description = "API key ID"
-  value       = confluent_api_key.this.id
-}
-
-output "api_key_secret" {
-  description = "API key secret — store in Key Vault, never expose"
-  value       = confluent_api_key.this.secret
-  sensitive   = true
+  description = "Confluent runtime service account ID (passed through from input)"
+  value       = var.runtime_service_account_id
 }
 
 output "topic_names" {

@@ -28,4 +28,5 @@ jobs:
       var_file: orders-${{ inputs.environment }}.tfvars
       backend_config: backend-${{ inputs.environment }}.hcl
       runner: self-hosted
+      environment: orders-${{ inputs.environment }}
     secrets: inherit

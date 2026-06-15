@@ -4,30 +4,42 @@ variable "azure_subscription_id" {
   sensitive   = true
 }
 
+variable "key_vault_id" {
+  description = "Resource ID of the platform Key Vault (to read cluster metadata)"
+  type        = string
+}
+
 variable "confluent_cloud_api_key" {
-  description = "Confluent Cloud API key (org-level)"
+  description = "Confluent Cloud API key (per-team deployer, ResourceOwner — from GitHub Environment)"
   type        = string
   sensitive   = true
 }
 
 variable "confluent_cloud_api_secret" {
-  description = "Confluent Cloud API secret (org-level)"
+  description = "Confluent Cloud API secret (per-team deployer — from GitHub Environment)"
   type        = string
   sensitive   = true
 }
 
-variable "key_vault_id" {
-  description = "Resource ID of the platform Key Vault (to read cluster metadata and write app secrets)"
+variable "runtime_service_account_id" {
+  description = "Confluent runtime service account ID (from GitHub Environment)"
   type        = string
+}
+
+variable "runtime_api_key_id" {
+  description = "Confluent runtime cluster API key ID (from GitHub Environment)"
+  type        = string
+  sensitive   = true
+}
+
+variable "runtime_api_key_secret" {
+  description = "Confluent runtime cluster API key secret (from GitHub Environment)"
+  type        = string
+  sensitive   = true
 }
 
 variable "team_name" {
   description = "Team name"
-  type        = string
-}
-
-variable "service_account_name" {
-  description = "Confluent service account display name"
   type        = string
 }
 

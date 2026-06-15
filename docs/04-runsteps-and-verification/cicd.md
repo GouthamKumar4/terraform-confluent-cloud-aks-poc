@@ -16,6 +16,8 @@ All prerequisites from [Runbook §Prerequisites](runbook.md#prerequisites--boots
 
 ## GitHub Secrets Configuration
 
+### Repository-Level Secrets (shared by all workflows)
+
 Go to: Repository → Settings → Secrets and variables → Actions
 
 | Secret Name | Value | Source |
@@ -23,13 +25,50 @@ Go to: Repository → Settings → Secrets and variables → Actions
 | `ARM_CLIENT_ID` | Managed Identity client ID | Runbook Step B.1 |
 | `ARM_TENANT_ID` | Azure tenant ID | `az account show --query tenantId` |
 | `ARM_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id` |
-| `CONFLUENT_CLOUD_API_KEY` | Confluent Cloud API key | Runbook Step D |
-| `CONFLUENT_CLOUD_API_SECRET` | Confluent Cloud API secret | Runbook Step D |
 | `KEY_VAULT_ID` | Key Vault resource ID (after platform deploy) | Platform output |
 
 Also add `ARM_USE_OIDC=true` as a **repository variable** (Settings → Variables → Actions), not a secret.
 
 > **No `ARM_CLIENT_SECRET` needed.** MI + OIDC handles Azure authentication with zero stored secrets.
+
+---
+
+## GitHub Environments Configuration
+
+Each deployment target has its own **GitHub Environment** that scopes which secrets are available to workflows.
+
+Go to: Repository → Settings → Environments → New environment
+
+### Environment: `platform-poc`
+
+| Secret Name | Value | Source |
+|-------------|-------|--------|
+| `CONFLUENT_CLOUD_API_KEY` | OrganizationAdmin Cloud API key | Runbook Step D |
+| `CONFLUENT_CLOUD_API_SECRET` | OrganizationAdmin Cloud API secret | Runbook Step D |
+
+### Environment: `orders-poc`
+
+| Secret Name | Value | Source |
+|-------------|-------|--------|
+| `CONFLUENT_CLOUD_API_KEY` | Deployer SA Cloud API key | Runbook Step D.2 Part A, step 3 |
+| `CONFLUENT_CLOUD_API_SECRET` | Deployer SA Cloud API secret | Runbook Step D.2 Part A, step 3 |
+| `CONFLUENT_RUNTIME_SA_ID` | Runtime SA ID (e.g., `sa-123456`) | Runbook Step D.2 Part B, step 4 |
+| `CONFLUENT_RUNTIME_API_KEY` | Runtime cluster API key | Runbook Step D.2 Part B, step 5 |
+| `CONFLUENT_RUNTIME_API_SECRET` | Runtime cluster API secret | Runbook Step D.2 Part B, step 5 |
+
+### Environment: `payments-poc`
+
+Same pattern as `orders-poc` — replace `orders` → `payments` in all values.
+
+> **Why Environments (not repo-level secrets)?** Each environment scopes secrets to its workflows. The orders runner cannot read payments secrets, and neither can read the org-level platform key. This is enforced by GitHub — no code-level workarounds possible.
+
+### Azure DevOps — Alternative
+
+If not using GitHub Actions:
+
+1. Create a service connection (type: Azure Resource Manager → Workload Identity federation)
+2. Add variable group with `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, Confluent keys (as secrets)
+3. Pipeline uses `AzureCLI@2` task which auto-sets `ARM_*` env vars
 
 ---
 
@@ -131,8 +170,7 @@ Each caller passes: `working_directory`, `var_file` (e.g., `platform-poc.tfvars`
 3. Click "Run workflow"
 
 **Expected result:**
-- Topics, SA, API key, ACLs created
-- API key stored in Key Vault (for AKS pods)
+- Topics, ACLs created
 - Exit code 0
 
 **Actual result:**

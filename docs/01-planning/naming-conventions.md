@@ -36,7 +36,7 @@ team_env = "${var.team_name}-${var.environment_short}"  # → "unpr-poc"
 
 # All names generated:
 #   rg-unpr-poc-001, vnet-unpr-poc-001, aks-unpr-poc-001
-#   kafka-unpr-poc-001 (cluster), sa-app-unpr-poc-001
+#   kafka-unpr-poc-001 (cluster)
 ```
 
 | Segment | Description | Example Values |
@@ -51,7 +51,7 @@ team_env = "${var.team_name}-${var.environment_short}"  # → "unpr-poc"
 | Category | Examples |
 |----------|---------|
 | **Azure infra** | `rg-unpr-poc-001`, `aks-unpr-poc-001`, `kv-unpr-poc-001`, `vnet-unpr-poc-001` |
-| **Confluent** | `kafka-unpr-poc-001` (cluster), `sa-app-unpr-poc-001`, `net-unpr-poc-001` |
+| **Confluent** | `kafka-unpr-poc-001` (cluster), `sa-deployer-orders-poc-001`, `sa-app-orders-poc-001`, `net-unpr-poc-001` |
 | **Bootstrap** | `rg-tfstate-unpr-poc-001`, `sttfstateunprpoc001`, `sc-tfstate-unpr-poc-001`, `id-terraform-unpr-poc-001` |
 
 ---
@@ -103,7 +103,8 @@ Same team name pattern, defined in `locals.tf`:
 | Environment | `poc` |
 | Network | `net-unpr-poc-001` |
 | Cluster | `kafka-unpr-poc-001` |
-| Service Account | `sa-app-unpr-poc-001` |
+| Deployer SA | `sa-deployer-<team>-poc-001` (per team, manual) |
+| Runtime SA | `sa-app-<team>-poc-001` (per team, manual) |
 | Topics | `orders`, `payments` (user-defined) |
 | DNS Zone | `privatelink.confluent.cloud` (fixed) |
 
@@ -172,7 +173,7 @@ Custom tags can be added via `var.tags` in `platform.tfvars`.
 
 ## Key Vault Secret Names
 
-### Platform secrets (written by platform deployment)
+### Platform secrets (written by platform Terraform)
 
 | Secret Name | Content | Source |
 |-------------|---------|--------|
@@ -181,14 +182,17 @@ Custom tags can be added via `var.tags` in `platform.tfvars`.
 | `confluent-rest-endpoint` | Kafka REST endpoint (data plane) | Confluent module output |
 | `confluent-bootstrap` | Kafka bootstrap endpoint | Confluent module output |
 
-### App team secrets (written by each team's deployment)
+### Per-team secrets (stored in GitHub Environment by cloud admin — Runbook Step D.2)
 
 | Secret Name | Content | Source |
 |-------------|---------|--------|
-| `<team>-confluent-api-key-id` | Team's API key identifier | confluent-app module output |
-| `<team>-confluent-api-key-secret` | Team's API key secret value | confluent-app module output |
+| `CONFLUENT_CLOUD_API_KEY` | Deployer SA Cloud API key | Cloud admin → GitHub Env |
+| `CONFLUENT_CLOUD_API_SECRET` | Deployer SA Cloud API secret | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_SA_ID` | Runtime SA ID | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_API_KEY` | Runtime SA cluster API key | Cloud admin → GitHub Env |
+| `CONFLUENT_RUNTIME_API_SECRET` | Runtime SA cluster API secret | Cloud admin → GitHub Env |
 
-Example: `orders-confluent-api-key-id`, `payments-confluent-api-key-secret`
+GitHub Environment naming: `<team>-<env>` (e.g., `orders-poc`, `payments-poc`)
 
 Convention: `<service>-<purpose>` with hyphens (Key Vault restriction: alphanumeric + hyphens only).
 

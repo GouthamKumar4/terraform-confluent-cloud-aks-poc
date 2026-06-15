@@ -30,4 +30,5 @@ jobs:
       backend_config: backend-${{ inputs.environment || 'poc' }}.hcl
       runner: ubuntu-latest
       plan_label: Platform
+      environment: platform-${{ inputs.environment || 'poc' }}
     secrets: inherit

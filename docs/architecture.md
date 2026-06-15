@@ -33,7 +33,7 @@ graph TB
             NET["Network: PRIVATELINK"]
             KAFKA["Dedicated Kafka<br>1 CKU, Single-Zone"]
         end
-        subgraph AppRes["App Teams (topics + SAs)"]
+        subgraph AppRes["App Teams (topics + ACLs)"]
             TOPICS_O["Orders Topics:<br>orders"]
             SA_O["SA: sa-app-orders"]
             TOPICS_P["Payments Topics:<br>payments"]
@@ -42,7 +42,7 @@ graph TB
     end
     
     AKS -->|"reads secrets<br>(managed identity)"| KV
-    Runner -->|"reads/writes secrets<br>(workload identity)"| KV
+    Runner -->|"reads secrets<br>(workload identity)"| KV
     Runner -->|"data plane<br>via PrivateLink"| KAFKA
     AKS -->|"DNS query"| DNS
     DNS -->|"resolves to<br>private IP"| PE
@@ -114,8 +114,8 @@ graph TB
 | **Purge Protection** | Enabled (7-day retention) | Prevents accidental permanent deletion |
 | **Network ACL** | Deny by default + AzureServices bypass | Restricts management access |
 | **Platform Secrets** | 4: cluster ID, environment ID, REST endpoint, bootstrap | Cluster metadata for app teams |
-| **App Team Secrets** | 2 per team: API key ID, API key secret | Confluent credentials for AKS pods |
-| **Access** | Deployer MI → Secrets Officer (write), AKS kubelet MI → Secrets User (read) | Deploy-time + runtime access |
+| **App Team Secrets** | None in KV — deployer + runtime credentials stored in GitHub Environment secrets | Scoped per deployment target (e.g., `orders-poc`) |
+| **Access** | Platform MI → Secrets Officer (write), AKS kubelet MI → Secrets User (read) | Deploy-time + runtime access |
 
 > **Deep dive:** [Security & Permissions](02-design/security-and-permissions.md) — full identity model and permissions
 
@@ -135,14 +135,12 @@ graph LR
     end
 
     subgraph AppTeams["App Teams (self-hosted runner on AKS)"]
-        A1["Orders: topics + SA + ACLs"]
-        A2["Payments: topics + SA + ACLs"]
+        A1["Orders: topics + ACLs"]
+        A2["Payments: topics + ACLs"]
     end
 
-    P4 -->|"KV: cluster_id<br>env_id, rest_endpoint"| A1
-    P4 -->|"KV: cluster_id<br>env_id, rest_endpoint"| A2
-    A1 -->|"KV: orders-api-key-*"| P4
-    A2 -->|"KV: payments-api-key-*"| P4
+    P4 -->|"KV: cluster_id<br>env_id, rest_endpoint<br>+ per-team SA secrets"| A1
+    P4 -->|"KV: cluster_id<br>env_id, rest_endpoint<br>+ per-team SA secrets"| A2
 
     style Platform fill:#E8F0FE,stroke:#4472C4
     style AppTeams fill:#FFF2E8,stroke:#ED7D31
@@ -156,9 +154,9 @@ graph LR
 | Azure VNet, subnets, PE, DNS zone | Platform team | `terraform/platform/` | `ubuntu-latest` |
 | AKS cluster | Platform team | `terraform/platform/` | `ubuntu-latest` |
 | Key Vault + platform secrets | Platform team | `terraform/platform/` | `ubuntu-latest` |
-| Orders topics, SA, API key, ACLs | Orders team | `terraform/teams/orders/` | `self-hosted` (AKS pod) |
-| Payments topics, SA, API key, ACLs | Payments team | `terraform/teams/payments/` | `self-hosted` (AKS pod) |
-| Team API key secrets in KV | Each app team | `terraform/teams/<team>/` | `self-hosted` (AKS pod) |
+| Orders topics, ACLs | Orders team | `terraform/teams/orders/` | `self-hosted` (AKS pod) |
+| Payments topics, ACLs | Payments team | `terraform/teams/payments/` | `self-hosted` (AKS pod) |
+| Per-team deployer + runtime SAs + API keys | Cloud admin | Confluent Console + `az keyvault` | Manual (Runbook Step D.2) |
 
 ### Self-Hosted Runner (AKS Pod)
 
@@ -167,8 +165,8 @@ App teams must run from inside the VNet because topic/ACL creation uses the Kafk
 ```
 AKS Pod (self-hosted runner)
   ├── Network: VNet-routed via Azure CNI → can reach PE → PrivateLink → Kafka REST API
-  ├── Identity: Workload Identity → authenticates to Azure (Key Vault read/write)
-  ├── Confluent auth: Cloud API key/secret via GitHub Secrets → TF_VAR_*
+  ├── Identity: Workload Identity → authenticates to Azure (Key Vault read)
+  ├── Confluent auth: Scoped Cloud API key from GitHub Env (ResourceOwner on team prefix)
   └── Terraform: runs terraform apply for teams/<team>/ root module
 ```
 
@@ -199,14 +197,12 @@ sequenceDiagram
     PTF->>KV: Store cluster_id, env_id, rest_endpoint, bootstrap
 
     Note over ATF,Kafka: 2. App Team Provisioning (from AKS pod — VNet access)
-    ATF->>KV: Read cluster_id, env_id, rest_endpoint
-    ATF->>CF: Create SA, API key (management API)
-    ATF->>Kafka: Create topics, ACLs (data plane via PrivateLink)
-    ATF->>KV: Store team API key id + secret
+    ATF->>KV: Read cluster metadata (cluster_id, env_id, rest_endpoint)
+    ATF->>CF: Create topics, ACLs (data plane via PrivateLink)
 
     Note over AKS,Kafka: 3. Runtime (ongoing)
     AKS->>KV: Read secrets (via managed identity, RBAC)
-    KV-->>AKS: Team API key, bootstrap endpoint
+    KV-->>AKS: Runtime cluster API key, bootstrap endpoint
     AKS->>DNS: Resolve bootstrap FQDN
     DNS-->>AKS: Private IP (10.0.0.x)
     AKS->>PE: TCP 9092 → private endpoint
@@ -220,11 +216,11 @@ sequenceDiagram
 |:----:|-------------|------|
 | 1 | Platform Terraform provisions cluster + networking | GitHub-hosted runner → Azure ARM + Confluent management API |
 | 2 | Platform writes cluster metadata to Key Vault | Platform → Key Vault |
+| 2b | Cloud admin creates per-team SAs + API keys, stores in GitHub Environment | Manual (Runbook Step D.2) |
 | 3 | App team Terraform reads KV, creates topics + ACLs | Self-hosted runner (AKS) → KV + Confluent data plane via PrivateLink |
-| 4 | App team writes API key secrets to Key Vault | Self-hosted runner → Key Vault |
-| 5 | Private DNS zone resolves FQDN → PE private IP | AKS CoreDNS → Azure DNS → Private DNS Zone |
-| 6 | AKS pods read credentials from Key Vault | Managed identity → RBAC → Key Vault |
-| 7 | AKS pods produce/consume Kafka messages | Pod → PE → PrivateLink → Kafka broker |
+| 4 | Private DNS zone resolves FQDN → PE private IP | AKS CoreDNS → Azure DNS → Private DNS Zone |
+| 5 | AKS pods read credentials from Key Vault | Managed identity → RBAC → Key Vault |
+| 6 | AKS pods produce/consume Kafka messages | Pod → PE → PrivateLink → Kafka broker |
 
 ---
 

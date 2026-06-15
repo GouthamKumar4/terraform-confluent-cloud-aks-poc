@@ -5,7 +5,7 @@
 #
 # Examples:
 #   Azure:     rg-unpr-poc-001, vnet-unpr-poc-001, aks-unpr-poc-001
-#   Confluent: kafka-unpr-poc-001, sa-app-unpr-poc-001
+#   Confluent: kafka-unpr-poc-001
 #   Bootstrap: rg-tfstate-unpr-poc-001, sttfstateunprpoc001, id-terraform-unpr-poc-001
 ###############################################################################
 

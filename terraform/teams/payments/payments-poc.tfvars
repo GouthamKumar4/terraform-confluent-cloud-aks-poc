@@ -1,11 +1,10 @@
 # Payments team configuration
 # Secrets passed via TF_VAR_* environment variables:
-#   TF_VAR_confluent_cloud_api_key
-#   TF_VAR_confluent_cloud_api_secret
 #   TF_VAR_azure_subscription_id
+# Confluent Cloud API key is read from Key Vault (scoped ResourceOwner key,
+# manually created by cloud admin per Runbook Step D.2). NOT from GitHub Secrets.
 
 team_name            = "payments"
-service_account_name = "sa-app-payments-poc-001"
 
 # Key Vault resource ID (from platform deployment output)
 # Format: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.KeyVault/vaults/<name>

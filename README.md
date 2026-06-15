@@ -97,7 +97,7 @@ Data Flow:  AKS Pod → Key Vault (get creds) → DNS (resolve FQDN) → Private
 │   │       └── backend-poc.hcl            ← POC backend config
 │   ├── modules/
 │   │   ├── confluent/                     ← Platform: cluster + network (management API)
-│   │   ├── confluent-app/                 ← App teams: topics + SA + ACLs (data plane)
+│   │   ├── confluent-app/                 ← App teams: topics + ACLs (data plane)
 │   │   ├── networking/                    ← VNet, PE, DNS
 │   │   ├── aks/                           ← AKS cluster + node pools
 │   │   └── keyvault/                      ← Secret storage
@@ -105,7 +105,7 @@ Data Flow:  AKS Pod → Key Vault (get creds) → DNS (resolve FQDN) → Private
 └── docs/
     ├── 01-planning/                       ← Scope, naming
     ├── 02-design/                         ← Network, security, ADRs
-    │   └── decisions/                     ← Architecture Decision Records (001–009)
+    │   └── decisions/                     ← Architecture Decision Records (001–010)
     ├── 03-implementation/                 ← Terraform module reference
     ├── 04-runsteps-and-verification/      ← Runbook + CI/CD + evidence
     ├── 05-observations/                   ← Issues, improvements
@@ -136,10 +136,16 @@ terraform apply tfplan
 # === Step 2: App team deployment (self-hosted runner in VNet) ===
 cd ../teams/orders
 
+export TF_VAR_azure_subscription_id="your-subscription-id"
 export TF_VAR_key_vault_id="<keyvault-resource-id-from-step-1>"
-# (same Confluent + Azure vars as above)
+export TF_VAR_confluent_cloud_api_key="<deployer-key-from-step-D.2>"
+export TF_VAR_confluent_cloud_api_secret="<deployer-secret>"
+export TF_VAR_runtime_service_account_id="<runtime-sa-id>"
+export TF_VAR_runtime_api_key_id="<runtime-cluster-api-key>"
+export TF_VAR_runtime_api_key_secret="<runtime-cluster-api-secret>"
+# In CI/CD, these come from GitHub Environment secrets (orders-poc)
 
-# Deploy topics + SA + ACLs (data plane — requires VNet access)
+# Deploy topics + ACLs (data plane — requires VNet access)
 terraform init -backend-config=backend-poc.hcl
 terraform plan -var-file=orders-poc.tfvars -out=tfplan
 terraform apply tfplan
@@ -186,6 +192,21 @@ graph LR
 
 ---
 
+## Security Highlights
+
+| Control | Implementation |
+|---------|---------------|
+| No public Kafka endpoint | PrivateLink-only (Dedicated tier) |
+| No public AKS API | `private_cluster_enabled = true` |
+| Secrets in Key Vault | RBAC auth, purge protection, deny-by-default ACL |
+| No secrets in code | `TF_VAR_*` env vars + GitHub Secrets |
+| Least-privilege ACLs | Topic-level WRITE/READ only, prefixed consumer group |
+| Sensitive outputs | 5 outputs marked `sensitive = true` |
+
+> Full details: [Security & Permissions](docs/02-design/security-and-permissions.md)
+
+---
+
 ## Cleanup
 
 ```bash
@@ -205,18 +226,3 @@ terraform destroy -var-file=platform-poc.tfvars
 ```
 
 > ⚠️ Dedicated Kafka costs ~$1.50/hr. Teardown immediately after verification.
-
----
-
-## Security Highlights
-
-| Control | Implementation |
-|---------|---------------|
-| No public Kafka endpoint | PrivateLink-only (Dedicated tier) |
-| No public AKS API | `private_cluster_enabled = true` |
-| Secrets in Key Vault | RBAC auth, purge protection, deny-by-default ACL |
-| No secrets in code | `TF_VAR_*` env vars + GitHub Secrets |
-| Least-privilege ACLs | Topic-level WRITE/READ only, prefixed consumer group |
-| Sensitive outputs | 5 outputs marked `sensitive = true` |
-
-> Full details: [Security & Permissions](docs/02-design/security-and-permissions.md)

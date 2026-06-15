@@ -26,4 +26,5 @@ jobs:
       var_file: platform-${{ inputs.environment }}.tfvars
       backend_config: backend-${{ inputs.environment }}.hcl
       runner: ubuntu-latest
+      environment: platform-${{ inputs.environment }}
     secrets: inherit

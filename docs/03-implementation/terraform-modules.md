@@ -30,15 +30,13 @@ graph TD
         LOG -->|workspace_id| AKS
     end
 
-    subgraph AppTeam["App Team Deployment (terraform/teams/<team>/)"]
+    subgraph AppTeam["App Team Deployment (terraform/teams/team/)"]
         AppRoot["Root Module<br>teams/orders/"]
         KVRead["data.azurerm_key_vault_secret<br>(cluster_id, env_id, rest_endpoint)"]
-        AppMod["confluent-app module"]
-        KVWrite["azurerm_key_vault_secret<br>(api-key-id, api-key-secret)"]
+        AppMod["confluent-app module<br>(topics + ACLs only)"]
         
         AppRoot --> KVRead
         KVRead -->|values| AppMod
-        AppMod -->|api_key_id, api_key_secret| KVWrite
     end
 
     KV -.->|"Key Vault secrets<br>(integration point)"| KVRead
@@ -117,19 +115,21 @@ The architecture is split into two independent Terraform deployments (see [ADR-0
 
 | # | Resource | Type | Purpose |
 |---|----------|------|---------|
-| 1 | `confluent_service_account.this` | Service Account | Team application identity |
-| 2 | `confluent_api_key.this` | API Key | Cluster-scoped credentials for the SA |
-| 3 | `confluent_kafka_topic.this` | Topics | One per entry in `var.topics` |
-| 4 | `confluent_kafka_acl.producer` | ACL | WRITE per topic |
-| 5 | `confluent_kafka_acl.consumer` | ACL | READ per topic |
-| 6 | `confluent_kafka_acl.consumer_group` | ACL | READ on consumer group prefix |
+| 1 | `confluent_kafka_topic.this` | Topics | One per entry in `var.topics` |
+| 2 | `confluent_kafka_acl.producer` | ACL | WRITE per topic |
+| 3 | `confluent_kafka_acl.consumer` | ACL | READ per topic |
+| 4 | `confluent_kafka_acl.consumer_group` | ACL | READ on consumer group prefix |
+
+> **Note:** Service accounts and cluster API keys are NOT created by this module. They are pre-created by the cloud admin (Runbook Step D.2) and passed as `TF_VAR_*` inputs via GitHub Environment secrets.
 
 ### Key Inputs
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `team_name` | string | Team name (used in SA description) |
-| `service_account_name` | string | SA display name |
+| `team_name` | string | Team name (used for topic prefix validation) |
+| `runtime_service_account_id` | string | Runtime SA ID (from GitHub Environment, created by admin) |
+| `runtime_api_key_id` | string | Cluster API key for runtime SA (from GitHub Environment) |
+| `runtime_api_key_secret` | string | Cluster API secret for runtime SA (from GitHub Environment) |
 | `cluster_id` | string | Kafka cluster ID (from Key Vault) |
 | `environment_id` | string | Confluent environment ID (from Key Vault) |
 | `rest_endpoint` | string | Kafka REST endpoint (from Key Vault) |
@@ -140,9 +140,7 @@ The architecture is split into two independent Terraform deployments (see [ADR-0
 
 | Output | Sensitive | Description |
 |--------|:---------:|-------------|
-| `service_account_id` | No | SA ID |
-| `api_key_id` | No | API key identifier |
-| `api_key_secret` | **Yes** | API key secret value |
+| `service_account_id` | No | Runtime SA ID (passthrough from input) |
 | `topic_names` | No | List of created topic names |
 ---
 
@@ -217,7 +215,7 @@ AKS Cluster
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `cluster_name` | string | — | Cluster name (1-63 chars, validated) |
-| `kubernetes_version` | string | `"1.29"` | K8s version (major.minor) |
+| `kubernetes_version` | string | `"1.35"` | K8s version (major.minor) |
 | `node_count` | number | `2` | User node pool size (module: 1-1000; POC root: 1-5) |
 | `vm_size` | string | `"Standard_D2s_v5"` | Node VM SKU |
 | `subnet_id` | string | — | AKS subnet from networking module |
@@ -266,14 +264,16 @@ module "keyvault" {
 }
 ```
 
-App team deployments then write their own secrets directly:
+App team deployments read cluster metadata from KV. Confluent credentials come from GitHub Environment secrets (`TF_VAR_*`):
 ```hcl
 # terraform/teams/orders/main.tf
-resource "azurerm_key_vault_secret" "api_key_id" {
-  name         = "${var.team_name}-confluent-api-key-id"
-  value        = module.confluent_app.api_key_id
+data "azurerm_key_vault_secret" "cluster_id" {
+  name         = "confluent-cluster-id"
   key_vault_id = var.key_vault_id
 }
+
+# Deployer + runtime credentials come from var.* (GitHub Environment)
+# var.confluent_cloud_api_key, var.runtime_service_account_id, etc.
 ```
 
 ### Key Inputs

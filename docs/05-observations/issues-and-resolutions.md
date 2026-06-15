@@ -76,7 +76,7 @@ secrets = {
 }
 ```
 
-App teams write their own secrets directly to the same Key Vault from their deployment.
+App team secrets (deployer key, runtime SA, cluster API key) are pre-created by the cloud admin and stored in GitHub Environment secrets (`orders-poc`, `payments-poc`). App teams read cluster metadata from KV only.
 
 **Lesson:** Modules should be generic. Domain-specific composition belongs in the root module.
 

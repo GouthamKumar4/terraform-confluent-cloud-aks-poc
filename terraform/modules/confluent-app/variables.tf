@@ -1,11 +1,23 @@
 variable "team_name" {
-  description = "Team name (used in service account description)"
+  description = "Team name (used for topic prefix validation)"
   type        = string
 }
 
-variable "service_account_name" {
-  description = "Display name for the Confluent service account"
+variable "runtime_service_account_id" {
+  description = "Confluent service account ID for the runtime SA (created by cloud admin, from GitHub Environment)"
   type        = string
+}
+
+variable "runtime_api_key_id" {
+  description = "Cluster-scoped API key ID for the runtime SA (created by cloud admin, from GitHub Environment)"
+  type        = string
+  sensitive   = true
+}
+
+variable "runtime_api_key_secret" {
+  description = "Cluster-scoped API key secret for the runtime SA (created by cloud admin, from GitHub Environment)"
+  type        = string
+  sensitive   = true
 }
 
 variable "cluster_id" {
@@ -44,6 +56,11 @@ variable "topics" {
   validation {
     condition     = alltrue([for t in var.topics : can(regex("^[a-zA-Z0-9._-]+$", t.name))])
     error_message = "Topic names must contain only alphanumeric characters, dots, hyphens, or underscores."
+  }
+
+  validation {
+    condition     = alltrue([for t in var.topics : startswith(t.name, var.team_name)])
+    error_message = "All topic names must start with the team name (e.g., 'orders-*' for team 'orders'). This prevents cross-team topic interference."
   }
 }
 

@@ -226,11 +226,13 @@ Platform writes shared configuration to **Azure Key Vault** (not `terraform_remo
 
 | Secret Name | Value | Written By | Read By |
 |---|---|---|---|
-| `confluent-cluster-id` | `lkc-xxxxx` | Platform | App teams |
-| `confluent-environment-id` | `env-xxxxx` | Platform | App teams |
-| `confluent-rest-endpoint` | `https://pkc-xxxxx...` | Platform | App teams |
-| `confluent-api-key-id` | _(per team)_ | App team | AKS pods |
-| `confluent-api-key-secret` | _(per team)_ | App team | AKS pods |
+| `confluent-cluster-id` | `lkc-xxxxx` | Platform TF | App teams |
+| `confluent-environment-id` | `env-xxxxx` | Platform TF | App teams |
+| `confluent-rest-endpoint` | `https://pkc-xxxxx...` | Platform TF | App teams |
+| `confluent-bootstrap` | `pkc-xxxxx...:9092` | Platform TF | App teams + AKS pods |
+| `<team>-deployer-cloud-api-key` | Cloud API key | Cloud admin (manual) | App team TF |
+| `<team>-runtime-sa-id` | SA ID | Cloud admin (manual) | App team TF |
+| `<team>-runtime-cluster-api-key` | Cluster API key | Cloud admin (manual) | App team TF + AKS pods |
 
 **Why Key Vault over `terraform_remote_state`:**
 

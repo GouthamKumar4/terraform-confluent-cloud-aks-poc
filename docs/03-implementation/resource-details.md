@@ -80,7 +80,7 @@
 
 | Property | Value |
 |----------|-------|
-| Kubernetes Version | `1.29` |
+| Kubernetes Version | `1.35` |
 | Network Plugin | Azure CNI |
 | Network Policy | Calico |
 | Private Cluster | `true` (API server on private IP only) |
@@ -113,10 +113,12 @@
 | 20 | `azurerm_key_vault_secret` | `confluent-environment-id` | Confluent environment ID | Platform |
 | 21 | `azurerm_key_vault_secret` | `confluent-rest-endpoint` | Kafka REST endpoint | Platform |
 | 22 | `azurerm_key_vault_secret` | `confluent-bootstrap` | Kafka bootstrap URL | Platform |
-| 23 | `azurerm_key_vault_secret` | `orders-confluent-api-key-id` | Orders team API key ID | App (orders) |
-| 24 | `azurerm_key_vault_secret` | `orders-confluent-api-key-secret` | Orders team API key secret | App (orders) |
-| 25 | `azurerm_key_vault_secret` | `payments-confluent-api-key-id` | Payments team API key ID | App (payments) |
-| 26 | `azurerm_key_vault_secret` | `payments-confluent-api-key-secret` | Payments team API key secret | App (payments) |
+| 23 | `azurerm_key_vault_secret` | `orders-deployer-cloud-api-key` | Orders deployer Cloud API key | Cloud admin (manual) |
+| 24 | `azurerm_key_vault_secret` | `orders-deployer-cloud-api-secret` | Orders deployer Cloud API secret | Cloud admin (manual) |
+| 25 | `azurerm_key_vault_secret` | `orders-runtime-sa-id` | Orders runtime SA ID | Cloud admin (manual) |
+| 26 | `azurerm_key_vault_secret` | `orders-runtime-cluster-api-key` | Orders runtime cluster API key | Cloud admin (manual) |
+| 27 | `azurerm_key_vault_secret` | `orders-runtime-cluster-api-secret` | Orders runtime cluster API secret | Cloud admin (manual) |
+| 28–32 | `azurerm_key_vault_secret` | `payments-*` (same pattern) | Payments team secrets | Cloud admin (manual) |
 
 **Key Vault Configuration:**
 
@@ -128,23 +130,39 @@
 | Network ACL | Deny by default, bypass AzureServices |
 | Soft Delete | Enabled (7 days) |
 
-### Confluent Cloud (12 resources)
+### Confluent Cloud
+
+**Platform resources (created by platform Terraform):**
 
 | # | Resource Type | Name | Config | Module |
 |---|--------------|------|--------|--------|
-| 22 | `confluent_environment` | `poc` | Stream Governance: Essentials | confluent |
-| 23 | `confluent_network` | `net-unpr-poc-001` | Azure, PrivateLink, westeurope | confluent |
-| 24 | `confluent_private_link_access` | `kafka-unpr-poc-001-pl-access` | Grants subscription access | confluent |
-| 25 | `confluent_kafka_cluster` | `kafka-unpr-poc-001` | Dedicated, 1 CKU, single-zone | confluent |
-| 26 | `confluent_service_account` | `sa-app-unpr-poc-001` | Application identity | confluent |
-| 27 | `confluent_api_key` | `sa-app-unpr-poc-001-api-key` | Cluster-scoped, bound to SA | confluent |
-| 28 | `confluent_kafka_topic` | `orders` | 3 partitions | confluent |
-| 29 | `confluent_kafka_topic` | `payments` | 3 partitions | confluent |
-| 30 | `confluent_kafka_acl` | Producer → `orders` | WRITE, LITERAL | confluent |
-| 31 | `confluent_kafka_acl` | Producer → `payments` | WRITE, LITERAL | confluent |
-| 32 | `confluent_kafka_acl` | Consumer → `orders` | READ, LITERAL | confluent |
-| 33 | `confluent_kafka_acl` | Consumer → `payments` | READ, LITERAL | confluent |
-| 34 | `confluent_kafka_acl` | Consumer Group → `poc-*` | READ, PREFIXED | confluent |
+| 1 | `confluent_environment` | `poc` | Stream Governance: Essentials | confluent |
+| 2 | `confluent_network` | `net-unpr-poc-001` | Azure, PrivateLink, westeurope | confluent |
+| 3 | `confluent_private_link_access` | `kafka-unpr-poc-001-pl-access` | Grants subscription access | confluent |
+| 4 | `confluent_kafka_cluster` | `kafka-unpr-poc-001` | Dedicated, 1 CKU, single-zone | confluent |
+
+**Per-team resources (created manually by cloud admin — Runbook Step D.2):**
+
+| # | Resource | Name | Purpose |
+|---|----------|------|---------|
+| 5 | Deployer SA | `sa-deployer-orders-poc-001` | ResourceOwner on `orders*` — used by app team TF |
+| 6 | Runtime SA | `sa-app-orders-poc-001` | ACLs assigned by app team TF — used by AKS pods |
+| 7 | Cloud API key | For deployer SA | TF provider auth |
+| 8 | Cluster API key | For runtime SA | Topic/ACL operations + AKS pod auth |
+| 9–12 | Same pattern | Payments team | `sa-deployer-payments-poc-001`, `sa-app-payments-poc-001` |
+
+**Per-team resources (created by app team Terraform):**
+
+| # | Resource Type | Name | Config | Module |
+|---|--------------|------|--------|--------|
+| 13 | `confluent_kafka_topic` | `orders` | 3 partitions | confluent-app |
+| 14 | `confluent_kafka_topic` | `payments` | 3 partitions | confluent-app |
+| 15 | `confluent_kafka_acl` | Producer → `orders` | WRITE, LITERAL | confluent-app |
+| 16 | `confluent_kafka_acl` | Consumer → `orders` | READ, LITERAL | confluent-app |
+| 17 | `confluent_kafka_acl` | Consumer Group → `orders-*` | READ, PREFIXED | confluent-app |
+| 18 | `confluent_kafka_acl` | Producer → `payments` | WRITE, LITERAL | confluent-app |
+| 19 | `confluent_kafka_acl` | Consumer → `payments` | READ, LITERAL | confluent-app |
+| 20 | `confluent_kafka_acl` | Consumer Group → `payments-*` | READ, PREFIXED | confluent-app |
 
 ---
 
@@ -156,8 +174,10 @@
 | Networking | 11 | — | 11 |
 | AKS | 2 | — | 2 |
 | Key Vault | 6 | — | 6 |
-| Confluent | — | 13 | 13 |
-| **Total** | **21** | **13** | **34** |
+| Confluent (platform) | — | 4 | 4 |
+| Confluent-app (per team, ×2) | — | 4 per team | 8 |
+| Manual (cloud admin) | — | 4 SAs + 4 keys | 8 |
+| **Total** | **21** | **24** | **41** |
 
 ---
 
@@ -168,7 +188,6 @@
 | `resource_group_name` | Resource group name | No |
 | `confluent_environment_id` | Confluent environment ID (e.g., `env-xxxxx`) | No |
 | `confluent_cluster_id` | Kafka cluster ID (e.g., `lkc-xxxxx`) | No |
-| `confluent_topic_names` | List of topic names | No |
 | `vnet_id` | VNet resource ID | No |
 | `aks_cluster_name` | AKS cluster name | No |
 | `aks_oidc_issuer_url` | OIDC issuer URL for Workload Identity | No |

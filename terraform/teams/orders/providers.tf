@@ -1,7 +1,7 @@
 ###############################################################################
 # Provider Configuration
 # Azure: for reading Key Vault secrets (cluster metadata)
-# Confluent: for creating topics, SA, ACLs via data plane
+# Confluent: scoped Cloud API key from GitHub Environment (ResourceOwner)
 ###############################################################################
 
 provider "azurerm" {

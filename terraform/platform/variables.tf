@@ -148,7 +148,7 @@ variable "aks_subnet_prefix" {
 variable "kubernetes_version" {
   description = "Kubernetes version for AKS"
   type        = string
-  default     = "1.29"
+  default     = "1.35"
 }
 
 variable "aks_node_count" {

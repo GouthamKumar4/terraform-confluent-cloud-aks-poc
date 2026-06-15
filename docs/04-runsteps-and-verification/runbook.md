@@ -7,16 +7,18 @@
 | **Prerequisites** | [Step A](#step-a-azure--create-terraform-state-backend) | Create Terraform state backend (RG, Storage Account, Container) |
 | | [Step B](#step-b-azure--create-managed-identity-for-terraform) | Create Managed Identity + RBAC (+ OIDC federation if CI/CD) |
 | | [Step C](#step-c-azure--register-required-providers) | Register Azure resource providers |
-| | [Step D](#step-d-confluent-cloud--organization--api-key-setup) | Confluent Cloud org & API key setup |
+| | [Step D](#step-d-confluent-cloud--organization--api-key-setup) | Confluent Cloud org & API key setup (platform SA) |
+| | [Step D.2](#step-d2-confluent-cloud--per-team-service-accounts--api-keys-repeat-per-team) | Per-team deployer + runtime SAs (repeat per team) |
 | | [Step E & F](#step-e--f-cicd-pipeline-secrets-optional--cicd-only) | _(Optional)_ GitHub / Azure DevOps pipeline secrets |
-| **Execution** | [Step 1](#step-1-configure-variables) | Configure variables |
-| | [Step 2](#step-2-initialize-terraform) | `terraform init` |
-| | [Step 3](#step-3-plan) | `terraform plan` |
-| | [Step 4](#step-4-apply) | `terraform apply` |
+| **Execution (Phase 1)** | [Step 1](#step-1-configure-variables) | Configure platform variables |
+| | [Step 2](#step-2-initialize-terraform) | `terraform init` (platform) |
+| | [Step 3](#step-3-plan) | `terraform plan` (platform) |
+| | [Step 4](#step-4-apply) | `terraform apply` (platform) |
 | | [Step 5](#step-5-accept-private-link-connection-if-manual) | Accept Private Link connection |
-| **Verification** | [V0](#v0-bootstrap-resources) | Bootstrap: RG, Storage, MI, RBAC |
-| | [V1–V9](#v1-confluent-resources) | Confluent, Networking, AKS, Key Vault, End-to-end |
-| **Cleanup** | [Cleanup](#cleanup) | `terraform destroy` |
+| **Execution (Phase 2)** | [Step 6](#step-6-deploy-app-team-resources-phase-2--from-self-hosted-runner) | App team Terraform (topics + ACLs, from self-hosted runner) |
+| **Verification** | [Step 7](#step-7-verify-end-to-end-optional--from-aks-pod) | End-to-end produce/consume test |
+| | [V0–V9](#v0-bootstrap-resources) | Full verification checklist |
+| **Cleanup** | [Cleanup](#cleanup) | `terraform destroy` (app teams first, then platform) |
 
 ---
 
@@ -252,60 +254,119 @@ az provider show --namespace Microsoft.ContainerService --query "registrationSta
 2. **Create a service account for Terraform** (recommended over personal credentials):
    - Confluent Console → Accounts & access → Service accounts → Add service account
    - Name: `sa-terraform-unpr-poc-001`
-   - Description: "Terraform automation — manages environments, clusters, topics"
+   - Description: \"Terraform automation — manages environments, clusters, and networking\"
 
 3. **Assign OrganizationAdmin role** to the service account:
    - Accounts & access → Role bindings → Add role binding
    - Principal: `sa-terraform-unpr-poc-001`
    - Role: `OrganizationAdmin`
-   - This allows Terraform to create environments, networks, clusters, service accounts, API keys, topics, ACLs
+   - This allows the **platform** Terraform to create environments, networks, and clusters
 
 4. **Generate Cloud API key** for the service account:
    - Confluent Console → API keys → Add key → **Cloud resource management** (organization-scoped)
    - Select: Service account `sa-terraform-unpr-poc-001`
    - Name/Description: `apikey-terraform-unpr-poc-001`
-   - Scope: **Global (org-level)** — required for Terraform to manage environments, networks, clusters, topics
+   - Scope: **Global (org-level)** — required for platform Terraform to manage environments, networks, clusters
    - **Save both Key and Secret** — the secret is shown only once!
    - These become `TF_VAR_confluent_cloud_api_key` and `TF_VAR_confluent_cloud_api_secret`
+
+> **This key is used by the platform deployment ONLY.** App teams do NOT use this key — they get a per-team scoped Cloud API key from GitHub Environment secrets. See [ADR-010](../02-design/decisions/010-scoped-confluent-api-keys.md).
+
+---
+
+### Step D.2: Confluent Cloud — Per-Team Service Accounts + API Keys (Repeat per team)
+
+> **When to run:** After platform `terraform apply` (Step 4) has created the environment and cluster. Repeat this for each app team being onboarded.
+>
+> **Who runs this:** Cloud admin or platform team lead.
+>
+> **What gets created per team:** 2 service accounts (deployer + runtime), 2 API keys (Cloud + cluster), 5 GitHub Environment secrets.
+>
+> **Other approaches considered:**
+> - Platform Terraform auto-creates (simpler, but tightly couples platform to team list)
+> - EnvironmentAdmin per team (fewer steps, but no Confluent-level prefix enforcement)
+> - Self-service pipeline (overkill for POC)
+>
+> `ResourceOwner` is chosen because it provides Confluent-level prefix isolation — the API returns 403 if a team tries to create topics outside their prefix. See [ADR-010](../02-design/decisions/010-scoped-confluent-api-keys.md).
+
+**For each team** (example: `orders`):
+
+#### Part A: Deployer SA (used by app team Terraform)
+
+1. **Create a deployer service account:**
+   - Confluent Console → Accounts & access → Service accounts → Add service account
+   - Name: `sa-deployer-orders-poc-001`
+   - Description: "Deployer SA for orders team — ResourceOwner on orders* topics"
+
+2. **Assign ResourceOwner role scoped to topic + group prefix:**
+   - Accounts & access → Role bindings → Add role binding
+   - Principal: `sa-deployer-orders-poc-001`
+   - Role: `ResourceOwner`
+   - Resource type: `Topic`, Pattern: `orders`, Pattern type: `PREFIXED`
+   - Cluster: Select the POC cluster
+
+   Repeat for consumer group prefix:
+   - Role: `ResourceOwner`
+   - Resource type: `Group`, Pattern: `orders`, Pattern type: `PREFIXED`
+
+3. **Generate Cloud API key for the deployer SA:**
+   - Confluent Console → API keys → Add key → **Cloud resource management**
+   - Select: Service account `sa-deployer-orders-poc-001`
+   - Name: `apikey-deployer-orders-poc-001`
+   - **Save both Key and Secret** — shown only once!
+
+#### Part B: Runtime SA (used by AKS pods for produce/consume)
+
+4. **Create a runtime service account:**
+   - Confluent Console → Accounts & access → Service accounts → Add service account
+   - Name: `sa-app-orders-poc-001`
+   - Description: "Runtime SA for orders team AKS pods — produce/consume to orders* topics"
+   - Note the **service account ID** (e.g., `sa-123456`)
+
+5. **Generate cluster-scoped API key for the runtime SA:**
+   - Confluent Console → API keys → Add key → **Kafka cluster API key**
+   - Select: Service account `sa-app-orders-poc-001`
+   - Cluster: Select the POC cluster
+   - Name: `apikey-runtime-orders-poc-001`
+   - **Save both Key and Secret** — shown only once!
+
+#### Part C: Store Credentials
+
+6. **For local / VM runs:** Set environment variables before `terraform apply`:
+   ```bash
+   export TF_VAR_confluent_cloud_api_key="<deployer-cloud-api-key>"
+   export TF_VAR_confluent_cloud_api_secret="<deployer-cloud-api-secret>"
+   export TF_VAR_runtime_service_account_id="<sa-123456>"
+   export TF_VAR_runtime_api_key_id="<runtime-cluster-api-key>"
+   export TF_VAR_runtime_api_key_secret="<runtime-cluster-api-secret>"
+   ```
+
+   > **For CI/CD (GitHub Actions):** Store these in GitHub Environment secrets instead. See [CI/CD Runbook — GitHub Environments](cicd.md#github-environments-configuration).
+
+7. **Repeat for payments team** (replace `orders` → `payments` everywhere above).
+
+**What each team's deployer SA can do:**
+
+| Action | Allowed? | Why |
+|--------|:--------:|-----|
+| Create topics `orders*` | ✅ | ResourceOwner on `Topic:orders*` |
+| Create ACLs on `orders*` topics | ✅ | ResourceOwner can manage ACLs on owned resources |
+| Create consumer groups `orders*` | ✅ | ResourceOwner on `Group:orders*` |
+| Create topics `payments*` | ❌ | **403 — not resource owner** |
+| Create service accounts | ❌ | Org-level only |
+| Create API keys | ❌ | Requires CloudClusterAdmin+ |
+| Delete Kafka cluster | ❌ | Requires OrganizationAdmin |
+| Delete environment | ❌ | Requires OrganizationAdmin |
+
+> **Defence in depth:** Prefix isolation is enforced at three levels: Confluent RBAC (ResourceOwner → 403), Terraform validation (`startswith`), and CODEOWNERS review.
+
+---
 
 5. **(Optional) Create user groups** for team access:
    - Accounts & access → Groups → Add group
    - Assign roles per environment/cluster after Terraform creates them
 
 ---
-
-### Step E & F: CI/CD Pipeline Secrets (Optional — CI/CD only)
-
-<details>
-<summary><strong>Expand only if setting up GitHub Actions or Azure DevOps pipelines</strong></summary>
-
-#### Step E: GitHub — Configure Repository Secrets
-
-Go to GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret:
-
-| Secret Name | Value | Source |
-|-------------|-------|--------|
-| `ARM_CLIENT_ID` | Managed Identity client ID | Step B.1 output |
-| `ARM_TENANT_ID` | Azure tenant ID | `az account show --query tenantId` |
-| `ARM_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id` |
-| `CONFLUENT_CLOUD_API_KEY` | Confluent Cloud API key | Step D output |
-| `CONFLUENT_CLOUD_API_SECRET` | Confluent Cloud API secret | Step D output |
-
-Also add `ARM_USE_OIDC=true` as a **repository variable** (not secret).
-
-> **No `ARM_CLIENT_SECRET` needed.** Managed Identity + OIDC federation handles authentication with zero stored Azure secrets.
-
----
-
-#### Step F: Azure DevOps — Alternative Setup (if not using GitHub)
-
-1. Create a service connection (type: Azure Resource Manager → Workload Identity federation)
-2. Add variable group with:
-   - `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` (from service connection)
-   - `CONFLUENT_CLOUD_API_KEY`, `CONFLUENT_CLOUD_API_SECRET` (as secrets)
-3. Pipeline uses `AzureCLI@2` task which auto-sets `ARM_*` env vars
-
-</details>
 
 ---
 
@@ -320,10 +381,12 @@ Non-sensitive values are already in `platform-poc.tfvars` (committed to repo).
 
 Set sensitive variables via environment:
 ```bash
-export TF_VAR_confluent_cloud_api_key="<your-confluent-api-key>"
-export TF_VAR_confluent_cloud_api_secret="<your-confluent-api-secret>"
 export TF_VAR_azure_subscription_id="<your-subscription-id>"
+export TF_VAR_confluent_cloud_api_key="<org-admin-cloud-api-key>"
+export TF_VAR_confluent_cloud_api_secret="<org-admin-cloud-api-secret>"
 ```
+
+> These are the **OrganizationAdmin** Cloud API key/secret — used only by the platform deployment.
 
 ### Step 2: Initialize Terraform
 ```bash
@@ -347,83 +410,105 @@ Expected: All resources created. Note outputs.
 In some setups, the Private Link connection needs approval on the Confluent side:
 - Check Confluent Console → Networking → Private Link
 - Or wait for auto-approval if configured
-### Step 6: Create Kafka Topics (from Private Network)
 
-> **Why not via Terraform?** The Confluent Kafka REST API (used by `confluent_kafka_topic`) is a **data-plane** operation that goes through the PrivateLink endpoint. This endpoint is only reachable from inside the VNet — not from your local machine or CI runner. This is [by design](https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/dedicated-privatelink-azure-kafka-acls) per Confluent's official guidance.
->
-> **Role bindings (ACLs) ARE created via Terraform** — they use the Cloud management API (public), not the Kafka REST API.
->
-> **Options for topic creation:**
-> | Method | Works from local machine? | Recommended for |
-> |--------|---------------------------|------------------|
-> | AKS pod with kafka-topics CLI | No (runs inside VNet via `az aks command invoke`) | POC, automation |
-> | Confluent Cloud UI | Yes (if Resource Metadata Access enabled) | Viewing only |
-> | CI/CD from VNet runner | No (requires VNet compute) | Production |
+### Step 6: Deploy App Team Resources (Phase 2 — from self-hosted runner)
 
-#### 6.1 Set Variables
+> **Two-phase deployment:** The platform (Steps 1–5) creates the Azure infrastructure and Confluent cluster from a GitHub-hosted runner. App team deployments create topics and ACLs using the Kafka REST API (data plane), which is only reachable via PrivateLink. Therefore, app team Terraform **must** run from a self-hosted runner inside the VNet (AKS pod).
+>
+> **Prerequisites before this step:**
+> 1. Platform `terraform apply` completed (Step 4)
+> 2. Private Link connection approved (Step 5)
+> 3. Per-team deployer SA + runtime SA created and stored in GitHub Environment (Step D.2)
+
+#### 6.1 Deploy Orders Team
+
+```bash
+# From self-hosted runner (AKS pod) or VM inside VNet
+cd terraform/teams/orders
+
+# Azure + Key Vault (cluster metadata)
+export TF_VAR_azure_subscription_id="<your-subscription-id>"
+export TF_VAR_key_vault_id="<kv-resource-id-from-platform-output>"
+
+# Confluent deployer SA (ResourceOwner on orders*)
+export TF_VAR_confluent_cloud_api_key="<deployer-orders-cloud-api-key>"
+export TF_VAR_confluent_cloud_api_secret="<deployer-orders-cloud-api-secret>"
+
+# Confluent runtime SA (used by AKS pods)
+export TF_VAR_runtime_service_account_id="<sa-123456>"
+export TF_VAR_runtime_api_key_id="<runtime-orders-cluster-api-key>"
+export TF_VAR_runtime_api_key_secret="<runtime-orders-cluster-api-secret>"
+
+terraform init -backend-config=backend-poc.hcl
+terraform plan -var-file=orders-poc.tfvars -out=tfplan
+terraform apply tfplan
+```
+
+**Expected:** Creates topics (`orders`) and ACLs for runtime SA.
+
+#### 6.2 Deploy Payments Team
+
+```bash
+cd terraform/teams/payments
+
+# Azure + Key Vault (cluster metadata)
+export TF_VAR_azure_subscription_id="<your-subscription-id>"
+export TF_VAR_key_vault_id="<kv-resource-id-from-platform-output>"
+
+# Confluent deployer SA (ResourceOwner on payments*)
+export TF_VAR_confluent_cloud_api_key="<deployer-payments-cloud-api-key>"
+export TF_VAR_confluent_cloud_api_secret="<deployer-payments-cloud-api-secret>"
+
+# Confluent runtime SA (used by AKS pods)
+export TF_VAR_runtime_service_account_id="<sa-789012>"
+export TF_VAR_runtime_api_key_id="<runtime-payments-cluster-api-key>"
+export TF_VAR_runtime_api_key_secret="<runtime-payments-cluster-api-secret>"
+
+terraform init -backend-config=backend-poc.hcl
+terraform plan -var-file=payments-poc.tfvars -out=tfplan
+terraform apply tfplan
+```
+
+**Expected:** Creates topics (`payments`) and ACLs for runtime SA.
+
+> **What each app team Terraform creates:**
+> - Topics matching `<team>*` prefix (via Kafka REST API through PrivateLink)
+> - ACLs granting the runtime SA produce/consume on those topics
+> - ACLs granting consumer group access for `<team>-*` groups
+>
+> **What it does NOT create:** Service accounts, API keys — these are pre-created by cloud admin (Step D.2) and stored in GitHub Environment secrets.
+
+---
+
+### Step 7: Verify End-to-End (Optional — from AKS pod)
+
+> After both platform and app team deploys complete, verify produce/consume works from inside the VNet.
+
+#### 7.1 Set Variables
 ```bash
 RG_NAME="rg-unpr-poc-001"
 AKS_NAME="aks-unpr-poc-001"
-API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-confluent-api-key-id --query value -o tsv)
-API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-confluent-api-key-secret --query value -o tsv)
 BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-bootstrap --query value -o tsv)
+
+# Runtime API key — use the values from Step D.2 (or GitHub Environment)
+API_KEY_ID="<runtime-orders-cluster-api-key>"
+API_KEY_SECRET="<runtime-orders-cluster-api-secret>"
 ```
 
-#### 6.2 Deploy Kafka Tools Pod
+#### 7.2 Deploy Kafka Tools Pod
 ```bash
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
   --command "kubectl run kafka-setup --image=confluentinc/cp-kafka:7.6.0 --restart=Never --command -- sleep 3600"
 
-# Wait for pod to be ready
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
   --command "kubectl wait --for=condition=Ready pod/kafka-setup --timeout=120s"
 ```
 
-#### 6.3 Create Topics
-```bash
-az aks command invoke \
-  --resource-group "$RG_NAME" \
-  --name "$AKS_NAME" \
-  --command "kubectl exec kafka-setup -- bash -c '
-cat > /tmp/client.properties <<EOF
-bootstrap.servers=${BOOTSTRAP}
-security.protocol=SASL_SSL
-sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${API_KEY_ID}\" password=\"${API_KEY_SECRET}\";
-EOF
-
-echo \"--- Creating orders topic ---\"
-kafka-topics --create --topic orders --partitions 3 --replication-factor 3 \
-  --if-not-exists --command-config /tmp/client.properties \
-  --bootstrap-server ${BOOTSTRAP}
-
-echo \"--- Creating payments topic ---\"
-kafka-topics --create --topic payments --partitions 3 --replication-factor 3 \
-  --if-not-exists --command-config /tmp/client.properties \
-  --bootstrap-server ${BOOTSTRAP}
-
-echo \"--- Listing topics ---\"
-kafka-topics --list --command-config /tmp/client.properties \
-  --bootstrap-server ${BOOTSTRAP}
-'"
-```
-
-**Expected:**
-```
---- Creating orders topic ---
-Created topic orders.
---- Creating payments topic ---
-Created topic payments.
---- Listing topics ---
-orders
-payments
-```
-
-#### 6.4 Verify Produce & Consume
+#### 7.3 Verify Produce & Consume
 ```bash
 az aks command invoke \
   --resource-group "$RG_NAME" \
@@ -448,7 +533,7 @@ timeout 15 kafka-console-consumer --topic orders \
   --from-beginning --max-messages 3 \
   --bootstrap-server ${BOOTSTRAP} \
   --consumer.config /tmp/client.properties \
-  --group poc-verify 2>&1
+  --group orders-verify 2>&1
 echo \"Consumer exit: \$?\"
 '"
 ```
@@ -465,7 +550,7 @@ Processed a total of 3 messages
 Consumer exit: 0
 ```
 
-#### 6.5 Cleanup Setup Pod
+#### 7.4 Cleanup Setup Pod
 ```bash
 az aks command invoke \
   --resource-group "$RG_NAME" \
@@ -473,18 +558,6 @@ az aks command invoke \
   --command "kubectl delete pod kafka-setup --ignore-not-found"
 ```
 
-#### ACLs / Role Bindings
-
-> **Already created by Terraform** (Step 4). The service account `sa-app-unpr-poc-001` has:
-> - `DeveloperRead` on topics `orders` and `payments` (consume)
-> - `DeveloperWrite` on topics `orders` and `payments` (produce)
-> - `DeveloperRead` on consumer groups prefixed with `poc-`
->
-> These use the Confluent Cloud RBAC management API (public endpoint), so Terraform creates them directly — no PrivateLink needed.
-
----
-
-## Verification Steps
 ---
 
 ## Verification Steps
@@ -498,12 +571,12 @@ az aks command invoke \
 | # | Test | Category | Expected | Actual | Status |
 |---|------|----------|----------|--------|:------:|
 | V0 | Bootstrap resources exist | Bootstrap | RG, Storage, MI, RBAC | | ✅ |
-| V1 | Confluent environment + cluster + topics | Confluent | IDs returned | | ✅ |
+| V1 | Confluent environment + cluster | Confluent | IDs returned | | ✅ |
 | V2 | Private Endpoint connected | Networking | Status = Approved | | ✅ |
 | V3 | DNS resolves to private IP | Networking | FQDN → 10.0.1.x | | ✅ |
 | V4 | AKS cluster ready | AKS | Nodes in Ready state | | ✅ |
-| V5 | Key Vault secrets present | Key Vault | 3 secrets listed | | ✅ |
-| V6 | List & describe topics | Kafka | orders, payments listed | | ✅ |
+| V5 | Key Vault secrets present | Key Vault | Platform + per-team secrets | | ✅ |
+| V6 | Topics created (app team TF) | Kafka | orders, payments listed | | ✅ |
 | V7 | Produce message | End-to-end | Message sent | | ✅ |
 | V8 | Consume message | End-to-end | Message received | | ✅ |
 | V9 | Unauthorized access denied | Security | Auth error | | ✅ |
@@ -559,23 +632,20 @@ az role assignment list \
 
 ### V1: Verify Confluent Resources
 
-**Commands:**
+**Commands (from `terraform/platform/`):**
 ```bash
 terraform output confluent_environment_id
 terraform output confluent_cluster_id
-terraform output confluent_topic_names
 ```
 
-**Expected:** Environment ID (e.g., `env-xxxxx`), Cluster ID (e.g., `lkc-xxxxx`), Topics: `["orders", "payments"]`
+**Expected:** Environment ID (e.g., `env-xxxxx`), Cluster ID (e.g., `lkc-xxxxx`)
+
+> **Note:** Topics are NOT created by the platform. They are created by app team Terraform (Step 6).
 
 **Actual output:**
 ```
 "env-5d180n"
 "lkc-gqp3z9n"
-[
-  "orders",
-  "payments",
-]
 ```
 
 <!-- SCREENSHOT: docs/assets/v1-confluent-resources.png -->
@@ -594,16 +664,25 @@ Check in portal AKS cluster is provisioned
 az keyvault secret list --vault-name kv-unpr-poc-001 --query "[].name" -o tsv
 ```
 
-**Expected (after platform + app team deploys):**
+**Expected (after platform deploy + admin onboarding + app team deploys):**
 ```
+# Platform secrets (written by terraform apply)
 confluent-cluster-id
 confluent-environment-id
 confluent-rest-endpoint
 confluent-bootstrap
-orders-confluent-api-key-id
-orders-confluent-api-key-secret
-payments-confluent-api-key-id
-payments-confluent-api-key-secret
+
+# Per-team secrets (written by cloud admin — Step D.2)
+orders-deployer-cloud-api-key
+orders-deployer-cloud-api-secret
+orders-runtime-sa-id
+orders-runtime-cluster-api-key
+orders-runtime-cluster-api-secret
+payments-deployer-cloud-api-key
+payments-deployer-cloud-api-secret
+payments-runtime-sa-id
+payments-runtime-cluster-api-key
+payments-runtime-cluster-api-secret
 ```
 
 **Actual output:**
@@ -660,8 +739,16 @@ az aks command invoke \
 
 ### V6: List & Describe Topics
 
+> **Prereq:** App team Terraform applied (Step 6) + kafka-setup pod running (deploy via Step 7.2 if needed).
+
 **Command:**
 ```bash
+RG_NAME="rg-unpr-poc-001"
+AKS_NAME="aks-unpr-poc-001"
+API_KEY_ID=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-runtime-cluster-api-key --query value -o tsv)
+API_KEY_SECRET=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name orders-runtime-cluster-api-secret --query value -o tsv)
+BOOTSTRAP=$(az keyvault secret show --vault-name kv-unpr-poc-001 --name confluent-bootstrap --query value -o tsv)
+
 az aks command invoke \
   --resource-group "$RG_NAME" \
   --name "$AKS_NAME" \
@@ -700,6 +787,8 @@ Topic: payments   PartitionCount: 3   ReplicationFactor: 3   ...
 ---
 
 ### V7: Produce Messages
+
+> **Uses:** Runtime SA cluster API key (from KV) — same credentials AKS pods would use in production.
 
 **Command:**
 ```bash
@@ -753,7 +842,7 @@ timeout 15 kafka-console-consumer --topic orders \
   --from-beginning --max-messages 3 \
   --bootstrap-server ${BOOTSTRAP} \
   --consumer.config /tmp/client.properties \
-  --group poc-verify 2>&1
+  --group orders-verify 2>&1
 echo \"Consumer exit: \$?\"
 '"
 ```

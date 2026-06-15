@@ -11,7 +11,7 @@ Validate that Confluent Cloud Kafka and AKS can be provisioned securely and repe
 | Confluent Kafka Dedicated cluster | Provisioned via Terraform |
 | Private connectivity (PrivateLink) | Configured and validated |
 | Topics: orders, payments | Created with ACLs |
-| Service account + API key | Created, stored in Key Vault |
+| Per-team service accounts + API keys | Created by cloud admin, stored in GitHub Environment |
 | AKS cluster | Provisioned with workload identity |
 | Key Vault integration | Secrets secured with RBAC |
 | GitHub Actions CI/CD | Validate, Plan, Apply workflows |
